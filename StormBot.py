@@ -13,7 +13,6 @@ cursor = conn.cursor()
                   # Messages_Sent integer, Overall_Activity boolean)
                #""")
 
-#cursor.execute("""INSERT INTO  Activity VALUES ('ZombieEar', 162705828883726336, 343, 6575, 1)""")
 #conn.commit()
 
 BOT_PREFIX = ("?", "!")
