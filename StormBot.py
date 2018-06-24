@@ -1,8 +1,20 @@
 import random
 import asyncio
 import time
+import sqlite3
 from discord import Game
 from discord.ext.commands import Bot
+
+conn = sqlite3.connect('pythonsqlite.db')
+cursor = conn.cursor()
+
+#cursor.execute("""CREATE TABLE Activity
+                  #(User text PRIMARY KEY, ID integer, Minutes_Voice integer,
+                  # Messages_Sent integer, Overall_Activity boolean)
+               #""")
+
+#cursor.execute("""INSERT INTO  Activity VALUES ('ZombieEar', 162705828883726336, 343, 6575, 1)""")
+#conn.commit()
 
 BOT_PREFIX = ("?", "!")
 #Get Token from file
@@ -11,6 +23,7 @@ TOKEN = str(f.readline())
 f.close()
 
 client = Bot (command_prefix=BOT_PREFIX)
+
 
 @client.command(name='8Ball',
                 description='Answer a yes/no question',
@@ -34,13 +47,12 @@ async def report(ctx):
     print("done")
 
 
+
 @client.event
 async def on_ready():
     await client.change_presence(game=Game(name="?help"))
     print("Logged in as " + client.user.name)
     print("Client User ID: " + client.user.id)
-    file = open("member_activity_report.html", "w+")
-    file.close()
 
 
 @client.event
@@ -55,23 +67,50 @@ async def list_servers():
 
 
 @client.event
-async def on_voice_state_update(before, after, context):
+async def on_voice_state_update(before, after):
     if before.voice.voice_channel is None and after.voice.voice_channel is not None:
         if before.voice.voice_channel is None and after.voice.voice_channel is not None:
             start = int(time.time())
-            print("joined-" + str(start))
         while before.voice.voice_channel is None and after.voice.voice_channel is not None:
-            print("looping...")
             await asyncio.sleep(0.5)
         finish = int(time.time())
-        print("left-" + str(finish))
-        print(str(finish - start))
+        duration = finish - start
+        cursor.execute("""SELECT * FROM Activity WHERE User = ?""", (after.name,))
+        retn = cursor.fetchall()
+        if len(retn) == 0:
+            cursor.execute("""INSERT INTO  Activity VALUES (?, NULL, ?, 0, 0)""", (after.name, duration))
+            conn.commit()
+        else:
+            sql = """
+               UPDATE Activity
+               SET Minutes_Voice = Minutes_Voice + ?
+               WHERE User = ?
+            """
+            data = (duration, after.name)
+            cursor.execute(sql, data)
+            conn.commit()
 
 
-#@client.event
-#async def on_message(message):
-   # author = message.author
-   # authorid = message.author.id
+
+@client.event
+async def on_message(message):
+    author = str(message.author)
+    author = author[:-5]
+    cursor.execute("""SELECT * FROM Activity WHERE User = ?""", (author,))
+    retn = cursor.fetchall()
+    if len(retn) == 0:
+        cursor.execute("""INSERT INTO  Activity VALUES (?, ?, ?, 0, 0)""", (author, message.author.id, 1))
+        conn.commit()
+    else:
+        sql = """
+                   UPDATE Activity
+                   SET Messages_Sent = Messages_Sent + ?
+                   WHERE User = ? 
+                """
+        data = (1, author)
+        cursor.execute(sql, data)
+        conn.commit()
+
 
 
 client.loop.create_task(list_servers())
