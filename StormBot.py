@@ -24,7 +24,7 @@ else:
     conn = sqlite3.connect('pythonsqlite.db')
     cursor = conn.cursor()
     cursor.execute("""CREATE TABLE Activity
-                      (User text PRIMARY KEY, Minutes_Voice integer,
+                      (User text PRIMARY KEY, User_ID text, User_Nickname text, Minutes_Voice integer,
                        Messages_Sent integer, Active_Days_Weekly integer, Daily_Activity text,
                         Weekly_Activity text)
                    """)
@@ -179,10 +179,10 @@ async def on_message(message):
     author = str(message.author)
     cursor.execute("""SELECT * FROM Activity WHERE User = ?""", (author,))
     retn = cursor.fetchall()
-
     if len(retn) == 0:
         print("Warning 0007 -- MEMBER *" + author + "* NOT FOUND - Adding user to DataBase")
-        cursor.execute("""INSERT INTO Activity VALUES (?, 0, 1, 0, 'NA', 'NA')""", (author,))
+        cursor.execute("""INSERT INTO Activity VALUES (?, ?, ?, 0, 1, 0, 'NA', 'NA')""", (author, message.author.id
+                                                                                          , message.author.display_name))
         conn.commit()
     else:
         sql = """
@@ -280,7 +280,8 @@ async def on_message(message):
 @client.event#0008
 async def on_member_join(member):
     user = str(member)
-    cursor.execute("""INSERT INTO Activity VALUES (?, 0, 0, 0, 'NA', 'NA')""", (user,))
+    cursor.execute("""INSERT INTO Activity VALUES (?, ?, ?, 0, 0, 0, 'NA', 'NA')""", (user, str(member.id)
+                                                                                      , str(member.nick)))
     conn.commit()
     print("-on_member_join   User Joined      User:" + user)
 
@@ -289,13 +290,28 @@ async def on_member_join(member):
 @client.event#0009
 async def on_member_remove(member):
     user = str(member)
-    cursor.execute("""DELETE FROM Activity WHERE User = ?""", (user,))
+    cursor.execute("""DELETE FROM Activity WHERE User = ?""", (user, ))
     conn.commit()
     print("-on_member_remove   User Left     User:" + user)
 
-
-#@client.event
-#async def on_member_update(before, after):
+'''
+@client.event
+async def on_member_update(before, after):
+    cursor.execute("""SELECT * FROM Activity WHERE User LIKE (?)""", (('%' + after.name + '%'),))
+    retn = cursor.fetchall()
+    if len(retn) == 0:
+        print("ERROR 0006 -- THE MEMBER *" + after.name + "* CANNOT BE LOCATED IN THE DATABASE")
+    else:
+        sql = """
+                   UPDATE Activity
+                   SET User_Nickname = ?
+                   WHERE User LIKE (?)
+                """
+        data = (after.nickname, ('%' + after.name + '%'))
+        cursor.execute(sql, data)
+        conn.commit()
+        print("User: " + after.name + "Changed Nicknames to *" + after.nickname + "*")
+'''
 
 
 def set_role(user, role):
