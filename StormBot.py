@@ -2,19 +2,27 @@ import random
 import asyncio
 import time
 import sqlite3
+from os import path
 from discord import Game
 from discord.ext.commands import Bot
 
-conn = sqlite3.connect('pythonsqlite.db')
-cursor = conn.cursor()
 
-#cursor.execute("""CREATE TABLE Activity
-                  #(User text PRIMARY KEY, ID integer, Minutes_Voice integer,
-                  # Messages_Sent integer, Overall_Activity boolean)
-               #""")
+SQL = path.exists("pythonsqlite.db") #Resumes or creates Database file
+if SQL is True:
+    print("SQL SERVER -- DATABASE RESUMING TO SAVED STATE")
+    conn = sqlite3.connect('pythonsqlite.db')
+    cursor = conn.cursor()
+else:
+    print("WARNING -- DATABASE FAILED TO RESUME TO SAVED STATE")
+    print("        -- SYSTEM CREATING DATABASE WITH NEW TABLE")
+    conn = sqlite3.connect('pythonsqlite.db')
+    cursor = conn.cursor()
+    cursor.execute("""CREATE TABLE Activity
+                      (User text PRIMARY KEY, Minutes_Voice integer,
+                       Messages_Sent integer, Overall_Activity boolean)
+                   """)
+    conn.commit()
 
-#cursor.execute("""INSERT INTO  Activity VALUES ('ZombieEar', 162705828883726336, 343, 6575, 1)""")
-#conn.commit()
 
 BOT_PREFIX = ("?", "!")
 #Get Token from file
@@ -47,7 +55,6 @@ async def report(ctx):
     print("done")
 
 
-
 @client.event
 async def on_ready():
     await client.change_presence(game=Game(name="?help"))
@@ -75,18 +82,18 @@ async def on_voice_state_update(before, after):
             await asyncio.sleep(0.5)
         finish = int(time.time())
         duration = finish - start
-        cursor.execute("""SELECT * FROM Activity WHERE User = ?""", (after.name,))
+        cursor.execute("""SELECT * FROM Activity WHERE User LIKE (?)""", (('%' + after.name + '%'),))
         retn = cursor.fetchall()
         if len(retn) == 0:
-            cursor.execute("""INSERT INTO  Activity VALUES (?, NULL, ?, 0, 0)""", (after.name, duration))
+            cursor.execute("""INSERT INTO Activity VALUES (?, ?, 0, 0)""", (after.name, duration))
             conn.commit()
         else:
             sql = """
                UPDATE Activity
                SET Minutes_Voice = Minutes_Voice + ?
-               WHERE User = ?
+               WHERE User LIKE (?)
             """
-            data = (duration, after.name)
+            data = (duration, ('%' + after.name + '%'))
             cursor.execute(sql, data)
             conn.commit()
 
@@ -95,12 +102,10 @@ async def on_voice_state_update(before, after):
 @client.event
 async def on_message(message):
     author = str(message.author)
-    author = author[:-5]
     cursor.execute("""SELECT * FROM Activity WHERE User = ?""", (author,))
     retn = cursor.fetchall()
     if len(retn) == 0:
-        cursor.execute("""INSERT INTO  Activity VALUES (?, ?, ?, 0, 0)""", (author, message.author.id, 1))
-        conn.commit()
+        print("ERROR -- User not found")
     else:
         sql = """
                    UPDATE Activity
@@ -110,6 +115,28 @@ async def on_message(message):
         data = (1, author)
         cursor.execute(sql, data)
         conn.commit()
+
+
+
+@client.event
+async def on_member_join(member):
+    user = str(member)
+    cursor.execute("""INSERT INTO Activity VALUES (?, 0, 0, 0)""", (user,))
+    conn.commit()
+    print("-on_member_join   User Joined      User:" + user)
+
+
+
+@client.event
+async def on_member_remove(member):
+    user = str(member)
+    cursor.execute("""DELETE FROM Activity WHERE User = ?""", (user,))
+    conn.commit()
+    print("-on_member_remove   User Left     User:" + user)
+
+
+#@client.event
+#async def on_member_update(before, after):
 
 
 
