@@ -6,8 +6,6 @@ from os import path
 from discord import Game
 from discord.ext.commands import Bot
 
-#https://discordapp.com/oauth2/authorize?client_id=419272087132307467&scope=bot
-
 #User Acitve Req
 def_voice = 60
 def_msg = 5
