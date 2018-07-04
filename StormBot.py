@@ -31,13 +31,16 @@ else:
 
 
 BOT_PREFIX = "?"
-'''
-#Get Token from file
-f = open("token.auth", "r")
-TOKEN = str(f.readline())
-f.close()
-'''
-TOKEN = os.environ['BOT_TOKEN']
+
+#I always forget to switch them when moving to Heroku
+token_key = path.exists("token.auth") #Resumes or creates Database file
+if token_key is True:
+    #Get Token from file
+    f = open("token.auth", "r")
+    TOKEN = str(f.readline())
+    f.close()
+else:
+    TOKEN = os.environ['BOT_TOKEN']
 
 client = Bot(command_prefix=BOT_PREFIX)
 
@@ -317,11 +320,11 @@ async def on_member_update(before, after):
                        SET User_Nickname = ?
                        WHERE User LIKE (?)
                     """
-            data = (after.nick, ('%' + after.name + '%'))
+            data = (str(after.nick), ('%' + after.name + '%'))
             cursor.execute(sql, data)
             conn.commit()
-            print("-Updated the user: " + after.name + " changed Nickname from *" + before.nick + "* to *"
-                  + after.nick + "*")
+            print("-Updated the user: " + after.name + " changed Nickname from *" + str(before.nick) + "* to *"
+                  + str(after.nick) + "*")
 
 
 def set_role(user, role):
