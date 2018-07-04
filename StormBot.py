@@ -2,11 +2,10 @@ import random
 import asyncio
 import time
 import sqlite3
+import os
 from os import path
 from discord import Game
 from discord.ext.commands import Bot
-
-#https://discordapp.com/oauth2/authorize?client_id=419272087132307467&scope=bot
 
 #User Acitve Req
 def_voice = 60
@@ -24,7 +23,7 @@ else:
     conn = sqlite3.connect('pythonsqlite.db')
     cursor = conn.cursor()
     cursor.execute("""CREATE TABLE Activity
-                      (User text PRIMARY KEY, User_ID text, User_Nickname text, Minutes_Voice integer,
+                      (User text PRIMARY KEY, User_ID text, User_Nickname text, Minutes_Voice double,
                        Messages_Sent integer, Active_Days_Weekly integer, Daily_Activity text,
                         Weekly_Activity text)
                    """)
@@ -32,11 +31,13 @@ else:
 
 
 BOT_PREFIX = "?"
+'''
 #Get Token from file
 f = open("token.auth", "r")
 TOKEN = str(f.readline())
 f.close()
-
+'''
+TOKEN = os.environ['BOT_TOKEN']
 
 client = Bot(command_prefix=BOT_PREFIX)
 
@@ -44,6 +45,7 @@ client = Bot(command_prefix=BOT_PREFIX)
 async def update_activity_daily(): #0001
     await client.wait_until_ready()
     while not client.is_closed:
+        await asyncio.sleep(60 * 60 * 24)  # task runs every day
         print("-Processing Daily Activity")
         act_tmp = 0
         inact_temp = 0
@@ -81,13 +83,13 @@ async def update_activity_daily(): #0001
                 inact_temp = inact_temp + 1
             temp = temp + 1
         print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
-        await asyncio.sleep(60 * 60 * 24) # task runs every day
 
 
 async def update_activity_weekly(): #0001
     await client.wait_until_ready()
     while not client.is_closed:
         print("-Processing Weekly Activity")
+        await asyncio.sleep(60 * 60 * 24 * 7)  # task runs every week
         act_tmp = 0
         inact_temp = 0
         cursor.execute("""SELECT COUNT(*) FROM Activity""")
@@ -121,13 +123,11 @@ async def update_activity_weekly(): #0001
                 inact_temp = inact_temp + 1
             temp2 = temp2 + 1
         print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
-        await asyncio.sleep(60 * 60 * 24 * 7)  # task runs every week
-
 
 
 @client.event#0004
 async def on_ready():
-    await client.change_presence(game=Game(name="TESTING - IN DEVELOPMENT"))#?help
+    #await client.change_presence(game=Game(name="TESTING - IN DEVELOPMENT"))#?help
     print("********************************************Login*Details***********************************************")
     print("     Logged in as " + client.user.name)
     print("     Client User ID: " + client.user.id)
@@ -146,6 +146,18 @@ async def list_servers():
         await asyncio.sleep(60*60)
 
 
+@client.event#0009
+async def display():
+    await client.wait_until_ready()
+    while not client.is_closed:
+        await client.change_presence(game=Game(name="TESTING - IN DEVELOPMENT"))  #?help
+        await asyncio.sleep(20)
+        await client.change_presence(game=Game(name="WATCHDOG (ACTIVE)"))
+        await asyncio.sleep(5)
+        await client.change_presence(game=Game(name="DEV: ZombieEar#0493"))
+        await asyncio.sleep(2)
+
+
 @client.event#0006
 async def on_voice_state_update(before, after):
     if before.voice.voice_channel is None and after.voice.voice_channel is not None:
@@ -154,7 +166,7 @@ async def on_voice_state_update(before, after):
         while before.voice.voice_channel is None and after.voice.voice_channel is not None:
             await asyncio.sleep(0.5)
         finish = int(time.time())
-        duration = finish - start
+        duration = ((finish - start) / 60)
         cursor.execute("""SELECT * FROM Activity WHERE User LIKE (?)""", (('%' + after.name + '%'),))
         retn = cursor.fetchall()
         if len(retn) == 0:
@@ -168,7 +180,6 @@ async def on_voice_state_update(before, after):
             data = (duration, ('%' + after.name + '%'))
             cursor.execute(sql, data)
             conn.commit()
-
 
 
 @client.event#0007
@@ -276,7 +287,6 @@ async def on_message(message):
         await client.send_message(message.channel, msg2.format(message))
 
 
-
 @client.event#0008
 async def on_member_join(member):
     user = str(member)
@@ -286,7 +296,6 @@ async def on_member_join(member):
     print("-on_member_join   User Joined      User:" + user)
 
 
-
 @client.event#0009
 async def on_member_remove(member):
     user = str(member)
@@ -294,30 +303,32 @@ async def on_member_remove(member):
     conn.commit()
     print("-on_member_remove   User Left     User:" + user)
 
-'''
+
 @client.event
 async def on_member_update(before, after):
     cursor.execute("""SELECT * FROM Activity WHERE User LIKE (?)""", (('%' + after.name + '%'),))
     retn = cursor.fetchall()
-    if len(retn) == 0:
-        print("ERROR 0006 -- THE MEMBER *" + after.name + "* CANNOT BE LOCATED IN THE DATABASE")
-    else:
-        sql = """
-                   UPDATE Activity
-                   SET User_Nickname = ?
-                   WHERE User LIKE (?)
-                """
-        data = (after.nickname, ('%' + after.name + '%'))
-        cursor.execute(sql, data)
-        conn.commit()
-        print("User: " + after.name + "Changed Nicknames to *" + after.nickname + "*")
-'''
+    if before.nick != after.nick:
+        if len(retn) == 0:
+            print("ERROR 0006 -- THE MEMBER *" + after.name + "* CANNOT BE LOCATED IN THE DATABASE")
+        else:
+            sql = """
+                       UPDATE Activity
+                       SET User_Nickname = ?
+                       WHERE User LIKE (?)
+                    """
+            data = (after.nick, ('%' + after.name + '%'))
+            cursor.execute(sql, data)
+            conn.commit()
+            print("-Updated the user: " + after.name + " changed Nickname from *" + before.nick + "* to *"
+                  + after.nick + "*")
 
 
 def set_role(user, role):
     print("")
 
 
+client.loop.create_task(display())
 client.loop.create_task(list_servers())
 client.loop.create_task(update_activity_daily())
 client.loop.create_task(update_activity_weekly())
