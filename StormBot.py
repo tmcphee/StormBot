@@ -31,7 +31,7 @@ else:
 
 
 BOT_PREFIX = "?"
-
+'''
 #I always forget to switch them when moving to Heroku
 token_key = path.exists("token.auth") #Resumes or creates Database file
 if token_key is True:
@@ -40,7 +40,8 @@ if token_key is True:
     TOKEN = str(f.readline())
     f.close()
 else:
-    TOKEN = os.environ['BOT_TOKEN']
+'''
+TOKEN = os.environ['BOT_TOKEN']
 
 client = Bot(command_prefix=BOT_PREFIX)
 
