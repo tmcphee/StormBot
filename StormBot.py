@@ -1,9 +1,6 @@
-import random
 import asyncio
 import time
-import sqlite3
-import os
-from os import path
+import pyodbc
 from discord import Game
 from discord.ext.commands import Bot
 
@@ -12,36 +9,21 @@ def_voice = 60
 def_msg = 5
 def_active_days = 4
 
-SQL = path.exists("pythonsqlite.db") #Resumes or creates Database file
-if SQL is True:
-    print("SQL SERVER -- DATABASE RESUMING TO SAVED STATE")
-    conn = sqlite3.connect('pythonsqlite.db')
-    cursor = conn.cursor()
-else:
-    print("WARNING -- DATABASE FAILED TO RESUME TO SAVED STATE")
-    print("        -- SYSTEM CREATING DATABASE WITH NEW TABLE")
-    conn = sqlite3.connect('pythonsqlite.db')
-    cursor = conn.cursor()
-    cursor.execute("""CREATE TABLE Activity
-                      (User text PRIMARY KEY, User_ID text, User_Nickname text, Minutes_Voice double,
-                       Messages_Sent integer, Active_Days_Weekly integer, Daily_Activity text,
-                        Weekly_Activity text)
-                   """)
-    conn.commit()
+text_file = open("StormBot.config", "r")
+BOT_CONFIG = text_file.readlines()
+text_file.close()
 
+server = str(BOT_CONFIG[0]).strip()
+database = str(BOT_CONFIG[1]).strip()
+username = str(BOT_CONFIG[2]).strip()
+password = str(BOT_CONFIG[3]).strip()
+TOKEN = str(BOT_CONFIG[4])
+
+conn = pyodbc.connect('DRIVER={SQL Server};SERVER=' + server + ';DATABASE=' + database + ';UID=' + username + ';PWD='
+                      + password)
+cursor = conn.cursor()
 
 BOT_PREFIX = "?"
-'''
-#I always forget to switch them when moving to Heroku
-token_key = path.exists("token.auth") #Resumes or creates Database file
-if token_key is True:
-    #Get Token from file
-    f = open("token.auth", "r")
-    TOKEN = str(f.readline())
-    f.close()
-else:
-'''
-TOKEN = os.environ['BOT_TOKEN']
 
 client = Bot(command_prefix=BOT_PREFIX)
 
@@ -53,22 +35,22 @@ async def update_activity_daily(): #0001
         print("-Processing Daily Activity")
         act_tmp = 0
         inact_temp = 0
-        cursor.execute("""SELECT COUNT(*) FROM Activity""")
+        cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
         rows = int(cursor.fetchone()[0])
         if rows == 0:
             break
         temp = 0
         while temp < rows:
-            cursor.execute("""SELECT User FROM Activity""")
+            cursor.execute("""SELECT User FROM DiscordActivity""")
             user = str(cursor.fetchall()[temp][0])
-            cursor.execute("""SELECT Minutes_Voice FROM Activity WHERE User LIKE (?)""", (('%' + user + '%'),))
+            cursor.execute("""SELECT Minutes_Voice FROM DiscordActivity WHERE User LIKE (?)""", (('%' + user + '%'),))
             voice_val = int(cursor.fetchone()[0])
-            cursor.execute("""SELECT Messages_Sent FROM Activity WHERE User LIKE (?)""", (('%' + user + '%'),))
+            cursor.execute("""SELECT Messages_Sent FROM DiscordActivity WHERE User LIKE (?)""", (('%' + user + '%'),))
             msg_val = int(cursor.fetchone()[0])
 
             if voice_val >= def_voice and msg_val >= def_msg:
                 sql = """
-                                       UPDATE Activity
+                                       UPDATE DiscordActivity
                                        SET Daily_Activity = ?
                                        AND Active_Days_Weekly = Active_Days_Weekly + ?
                                        WHERE User = ?
@@ -78,7 +60,7 @@ async def update_activity_daily(): #0001
                 act_tmp = act_tmp + 1
             else:
                 sql = """
-                                               UPDATE Activity
+                                               UPDATE DiscordActivity
                                                SET Daily_Activity = ?
                                                WHERE User = ?
                                             """
@@ -86,6 +68,14 @@ async def update_activity_daily(): #0001
                 cursor.execute(sql, data)
                 inact_temp = inact_temp + 1
             temp = temp + 1
+            sql = """
+                                                                               UPDATE DiscordActivity
+                                                                               SET Minutes_Voice = ?
+                                                                               AND Messages_Sent = ?
+                                                                               WHERE User = ?
+                                                                            """
+            data = (0, 0, user)
+            cursor.execute(sql, data)
         print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
 
 
@@ -96,36 +86,39 @@ async def update_activity_weekly(): #0001
         await asyncio.sleep(60 * 60 * 24 * 7)  # task runs every week
         act_tmp = 0
         inact_temp = 0
-        cursor.execute("""SELECT COUNT(*) FROM Activity""")
+        cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
         rows = int(cursor.fetchone()[0])
         if rows == 0:
             break
         temp2 = 0
         while temp2 < rows:
-            cursor.execute("""SELECT User FROM Activity""")
+            cursor.execute("""SELECT User FROM DiscordActivity""")
             user = str(cursor.fetchall()[temp2][0])
-            cursor.execute("""SELECT Active_Days_Weekly FROM Activity WHERE User LIKE (?)""", (('%' + user + '%'),))
+            cursor.execute("""SELECT Active_Days_Weekly FROM DiscordActivity WHERE User LIKE (?)""", (('%' + user + '%'),))
             active_days = int(cursor.fetchone()[0])
 
             if active_days >= def_active_days:
                 sql = """
-                                                       UPDATE Activity
+                                                       UPDATE DiscordActivity
                                                        SET Weekly_Activity = ?
+                                                       AND Active_Days_Weekly ? 
                                                        WHERE User = ?
                                                     """
-                data = ("Active", user)
+                data = ("Active", 0,  user)
                 cursor.execute(sql, data)
                 act_tmp = act_tmp + 1
             else:
                 sql = """
-                                                               UPDATE Activity
+                                                               UPDATE DiscordActivity
                                                                SET Weekly_Activity = ?
+                                                               AND Active_Days_Weekly ?
                                                                WHERE User = ?
                                                             """
-                data = ("Inactive", user)
+                data = ("Inactive", 0, user)
                 cursor.execute(sql, data)
                 inact_temp = inact_temp + 1
             temp2 = temp2 + 1
+
         print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
 
 
@@ -171,13 +164,13 @@ async def on_voice_state_update(before, after):
             await asyncio.sleep(0.5)
         finish = int(time.time())
         duration = ((finish - start) / 60)
-        cursor.execute("""SELECT * FROM Activity WHERE User LIKE (?)""", (('%' + after.name + '%'),))
+        cursor.execute("""SELECT * FROM DiscordActivity WHERE User LIKE (?)""", (('%' + after.name + '%'),))
         retn = cursor.fetchall()
         if len(retn) == 0:
             print("ERROR 0006 -- THE MEMBER *" + after.name + "* CANNOT BE LOCATED IN THE DATABASE")
         else:
             sql = """
-               UPDATE Activity
+               UPDATE DiscordActivity
                SET Minutes_Voice = Minutes_Voice + ?
                WHERE User LIKE (?)
             """
@@ -192,11 +185,11 @@ async def on_message(message):
         return
 
     author = str(message.author)
-    cursor.execute("""SELECT * FROM Activity WHERE User = ?""", (author,))
+    cursor.execute("""SELECT * FROM DiscordActivity WHERE User = ?""", (author,))
     retn = cursor.fetchall()
     if len(retn) == 0:
         print("Warning 0007 -- MEMBER *" + author + "* NOT FOUND - Adding user to DataBase")
-        cursor.execute("""INSERT INTO Activity VALUES (?, ?, ?, 0, 1, 0, 'NA', 'NA')""", (author, message.author.id
+        cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, 0, 1, 0, 'NA', 'NA')""", (author, message.author.id
                                                                                           , message.author.display_name))
         conn.commit()
     else:
@@ -217,7 +210,7 @@ async def on_message(message):
         import datetime
         date = str(datetime.datetime.now().strftime("%y-%m-%d-%H-%M"))
 
-        cursor.execute("""SELECT COUNT(*) FROM Activity""")
+        cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
         rows = int(cursor.fetchone()[0])
         temp3 = 0
         filename = 'member_activity_report.html'
@@ -230,18 +223,17 @@ async def on_message(message):
         file.write("<th>" + "Total Days Active" + "</th><th>" + "Daily Activity" + "</th>")
         file.write("<th>" + "Weekly Activity" + "</th></tr>")
         while temp3 < rows:
-            cursor.execute("""SELECT User FROM Activity""")
+            cursor.execute("""SELECT User FROM DiscordActivity""")
             user = str(cursor.fetchall()[temp3][0])
-            print(str(temp3) + "    " + user)
-            cursor.execute("""SELECT Minutes_Voice FROM Activity WHERE User = ?""", (user,))
+            cursor.execute("""SELECT Minutes_Voice FROM DiscordActivity WHERE User = ?""", (user,))
             min_voice = int(cursor.fetchone()[0])
-            cursor.execute("""SELECT Messages_Sent FROM Activity WHERE User = ?""", (user,))
+            cursor.execute("""SELECT Messages_Sent FROM DiscordActivity WHERE User = ?""", (user,))
             msg_sent = int(cursor.fetchone()[0])
-            cursor.execute("""SELECT Active_Days_Weekly FROM Activity WHERE User = ?""", (user,))
+            cursor.execute("""SELECT Active_Days_Weekly FROM DiscordActivity WHERE User = ?""", (user,))
             active_days = str(cursor.fetchone()[0])
-            cursor.execute("""SELECT Daily_Activity FROM Activity WHERE User = ?""", (user,))
+            cursor.execute("""SELECT Daily_Activity FROM DiscordActivity WHERE User = ?""", (user,))
             daily_act = str(cursor.fetchone()[0])
-            cursor.execute("""SELECT Weekly_Activity FROM Activity WHERE User = ?""", (user,))
+            cursor.execute("""SELECT Weekly_Activity FROM DiscordActivity WHERE User = ?""", (user,))
             weekly_act = str(cursor.fetchone()[0])
 
             file.write("<tr>")
@@ -262,9 +254,6 @@ async def on_message(message):
         file.close()
         await client.send_file(message.channel, 'member_activity_report.html')
 
-    if message.content.startswith(BOT_PREFIX + 'database'):
-        await client.send_file(message.channel, 'pythonsqlite.db')
-
     if message.content.startswith(BOT_PREFIX + 'help'):
         msg = '```css\n' \
               'List of Help Commands:\n' \
@@ -273,14 +262,14 @@ async def on_message(message):
         await client.send_message(message.channel, msg)
 
     if message.content.startswith(BOT_PREFIX + 'test'):
-        cursor.execute("""SELECT COUNT(*) FROM Activity""")
+        cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
         rows = cursor.fetchone()
         print(rows)
         cursor.execute("SELECT * FROM Activity")
         print(cursor.fetchall()[1])
 
     if message.content.startswith(BOT_PREFIX + 'db'):
-        cursor.execute("""SELECT COUNT(*) FROM Activity""")
+        cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
         rows = int(cursor.fetchone()[0])
         members = 0
         for server in client.servers:
@@ -294,7 +283,7 @@ async def on_message(message):
 @client.event#0008
 async def on_member_join(member):
     user = str(member)
-    cursor.execute("""INSERT INTO Activity VALUES (?, ?, ?, 0, 0, 0, 'NA', 'NA')""", (user, str(member.id)
+    cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, 0, 0, 0, 'NA', 'NA')""", (user, str(member.id)
                                                                                       , str(member.nick)))
     conn.commit()
     print("-on_member_join   User Joined      User:" + user)
@@ -303,21 +292,21 @@ async def on_member_join(member):
 @client.event#0009
 async def on_member_remove(member):
     user = str(member)
-    cursor.execute("""DELETE FROM Activity WHERE User = ?""", (user, ))
+    cursor.execute("""DELETE FROM DiscordActivity WHERE User = ?""", (user, ))
     conn.commit()
     print("-on_member_remove   User Left     User:" + user)
 
 
 @client.event
 async def on_member_update(before, after):
-    cursor.execute("""SELECT * FROM Activity WHERE User LIKE (?)""", (('%' + after.name + '%'),))
+    cursor.execute("""SELECT * FROM DiscordActivity WHERE User LIKE (?)""", (('%' + after.name + '%'),))
     retn = cursor.fetchall()
     if before.nick != after.nick:
         if len(retn) == 0:
             print("ERROR 0006 -- THE MEMBER *" + after.name + "* CANNOT BE LOCATED IN THE DATABASE")
         else:
             sql = """
-                       UPDATE Activity
+                       UPDATE DiscordActivity
                        SET User_Nickname = ?
                        WHERE User LIKE (?)
                     """
