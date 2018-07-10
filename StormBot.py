@@ -82,8 +82,8 @@ async def update_activity_daily(): #0001
 async def update_activity_weekly(): #0001
     await client.wait_until_ready()
     while not client.is_closed:
-        print("-Processing Weekly Activity")
         await asyncio.sleep(60 * 60 * 24 * 7)  # task runs every week
+        print("-Processing Weekly Activity")
         act_tmp = 0
         inact_temp = 0
         cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
