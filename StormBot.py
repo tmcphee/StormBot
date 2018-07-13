@@ -1,14 +1,14 @@
 import asyncio
 import time
+import datetime
 import pyodbc
+import discord
+import sqlite3
+from os import path
 from discord import Game
 from discord.ext.commands import Bot
 
-#User Acitve Req
-def_voice = 60
-def_msg = 5
-def_active_days = 4
-
+#CONFIG
 text_file = open("StormBot.config", "r")
 BOT_CONFIG = text_file.readlines()
 text_file.close()
@@ -23,6 +23,33 @@ conn = pyodbc.connect('DRIVER={SQL Server};SERVER=' + server + ';DATABASE=' + da
                       + password)
 cursor = conn.cursor()
 
+SQL = path.exists("pythonsqlite.db") #Resumes or creates Database file
+if SQL is True:
+    print("SQL INTERNAL SERVER -- DATABASE RESUMING TO SAVED STATE")
+    connect = sqlite3.connect('pythonsqlite.db')
+    cursor2 = connect.cursor()
+else:
+    print("WARNING -- INTERNAL DATABASE FAILED TO RESUME TO SAVED STATE")
+    print("        -- SYSTEM CREATING DATABASE WITH NEW TABLE")
+    connect = sqlite3.connect('pythonsqlite.db')
+    cursor2 = connect.cursor()
+    cursor2.execute("""CREATE TABLE Presets
+                          (NoVoice integer , NoMessages integer, ActiveDays integer, ActiveRole text, InactiveRole text)
+                       """)
+    connect.commit()
+    cursor2.execute("""INSERT INTO Presets VALUES (?,?,?,?,?)""", (60, 5, 4, "ACTIVE_SB", "INACTIVE_SB"))
+    connect.commit()
+
+#Import User Defined Presets
+cursor2.execute("""SELECT * FROM Presets""")
+conf = cursor2.fetchall()
+def_voice = conf[0][0]
+def_msg = conf[0][1]
+def_active_days = conf[0][2]
+role_active = conf[0][3]
+role_inactive = conf[0][4]
+server_id = '162706186272112640'
+
 BOT_PREFIX = "?"
 
 client = Bot(command_prefix=BOT_PREFIX)
@@ -31,95 +58,165 @@ client = Bot(command_prefix=BOT_PREFIX)
 async def update_activity_daily(): #0001
     await client.wait_until_ready()
     while not client.is_closed:
-        await asyncio.sleep(60 * 60 * 24)  # task runs every day
-        print("-Processing Daily Activity")
-        act_tmp = 0
-        inact_temp = 0
-        cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
-        rows = int(cursor.fetchone()[0])
-        if rows == 0:
-            break
-        temp = 0
-        while temp < rows:
-            cursor.execute("""SELECT User FROM DiscordActivity""")
-            user = str(cursor.fetchall()[temp][0])
-            cursor.execute("""SELECT Minutes_Voice FROM DiscordActivity WHERE User LIKE (?)""", (('%' + user + '%'),))
-            voice_val = int(cursor.fetchone()[0])
-            cursor.execute("""SELECT Messages_Sent FROM DiscordActivity WHERE User LIKE (?)""", (('%' + user + '%'),))
-            msg_val = int(cursor.fetchone()[0])
-
-            if voice_val >= def_voice and msg_val >= def_msg:
-                sql = """
-                                       UPDATE DiscordActivity
-                                       SET Daily_Activity = ?
-                                       AND Active_Days_Weekly = Active_Days_Weekly + ?
-                                       WHERE User = ?
-                                    """
-                data = ('Active', 1, user)
-                cursor.execute(sql, data)
-                act_tmp = act_tmp + 1
+        await asyncio.sleep(2)
+        current_time = datetime.datetime.now()
+        today1am = current_time.replace(hour=1, minute=0)
+        if current_time == today1am:
+            print("-Processing Daily Activity --- " + str(current_time))
+            cursor.execute("""SELECT * FROM DiscordActivity""")
+            user_dat = cursor.fetchall()
+            if len(user_dat) == 0:
+               break
             else:
-                sql = """
+                temp = 0
+                act_tmp = 0
+                inact_temp = 0
+                while temp < len(user_dat):
+                    user_id = str(user_dat[temp][2])
+                    voice_val = int(str(user_dat[temp][4]))
+                    msg_val = int(user_dat[temp][5])
+
+                    if voice_val >= def_voice and msg_val >= def_msg:
+                        sql = """
                                                UPDATE DiscordActivity
                                                SET Daily_Activity = ?
-                                               WHERE User = ?
+                                               WHERE User_ID = ?
                                             """
-                data = ("Inactive", user)
-                cursor.execute(sql, data)
-                inact_temp = inact_temp + 1
-            temp = temp + 1
-            sql = """
-                                                                               UPDATE DiscordActivity
-                                                                               SET Minutes_Voice = ?
-                                                                               AND Messages_Sent = ?
-                                                                               WHERE User = ?
-                                                                            """
-            data = (0, 0, user)
-            cursor.execute(sql, data)
-        print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
+                        data = ('Active', user_id)
+                        cursor.execute(sql, data)
+                        sql = """
+                                                                   UPDATE DiscordActivity
+                                                                   SET Active_Days_Weekly = Active_Days_Weekly + ?
+                                                                   WHERE User_ID = ?
+                                                                """
+                        data = (1, user_id)
+                        cursor.execute(sql, data)
+                        act_tmp = act_tmp + 1
+                    else:
+                        sql = """
+                                                       UPDATE DiscordActivity
+                                                       SET Daily_Activity = ?
+                                                       WHERE User_ID = ?
+                                                    """
+                        data = ("Inactive", user_id)
+                        cursor.execute(sql, data)
+                        inact_temp = inact_temp + 1
+                    temp = temp + 1
+
+                    time_file = open("BeginDate.txt", "r")
+                    begindate = time_file.readlines()[0]
+                    time_file.close()
+
+                    ts = time.time()
+                    enddate = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+
+                    cursor.execute("""INSERT INTO DiscordActivityArchive VALUES (?,?,?,?)""", user_id, voice_val, msg_val
+                                   , begindate)
+                    conn.commit()
+
+                    sql = """
+                                                                                       UPDATE DiscordActivity
+                                                                                       SET Minutes_Voice = (?)
+                                                                                       WHERE User_ID = ?
+                                                                                    """
+                    data = (0, user_id)
+                    cursor.execute(sql, data)
+                    sql = """
+                                                                                        UPDATE DiscordActivity
+                                                                                        SET Messages_Sent = ?
+                                                                                        WHERE User_ID = ?
+                                                                                    """
+                    data = (0, user_id)
+                    cursor.execute(sql, data)
+
+                    time_file = open("BeginDate.txt", "w")
+                    time_file.write(enddate)
+                    time_file.close()
+
+                print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
+                await asyncio.sleep(80)
 
 
 async def update_activity_weekly(): #0001
     await client.wait_until_ready()
     while not client.is_closed:
-        await asyncio.sleep(60 * 60 * 24 * 7)  # task runs every week
-        print("-Processing Weekly Activity")
-        act_tmp = 0
-        inact_temp = 0
-        cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
-        rows = int(cursor.fetchone()[0])
-        if rows == 0:
-            break
-        temp2 = 0
-        while temp2 < rows:
-            cursor.execute("""SELECT User FROM DiscordActivity""")
-            user = str(cursor.fetchall()[temp2][0])
-            cursor.execute("""SELECT Active_Days_Weekly FROM DiscordActivity WHERE User LIKE (?)""", (('%' + user + '%'),))
-            active_days = int(cursor.fetchone()[0])
+        current_weekday = datetime.datetime.now().weekday()
+        await asyncio.sleep(2)
+        if current_weekday == 6:
+            print("-Processing Weekly Activity")
+            act_tmp = 0
+            inact_temp = 0
+            cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
+            rows = int(cursor.fetchone()[0])
+            if rows == 0:
+                break
+            temp2 = 0
+            while temp2 < rows:
+                cursor.execute("""SELECT User_ID FROM DiscordActivity""")
+                userid = str(cursor.fetchall()[temp2][0])
+                cursor.execute("""SELECT Active_Days_Weekly FROM DiscordActivity WHERE User_ID ?""", (userid,))
+                active_days = int(cursor.fetchone()[0])
 
-            if active_days >= def_active_days:
-                sql = """
-                                                       UPDATE DiscordActivity
-                                                       SET Weekly_Activity = ?
-                                                       AND Active_Days_Weekly ? 
-                                                       WHERE User = ?
-                                                    """
-                data = ("Active", 0,  user)
-                cursor.execute(sql, data)
-                act_tmp = act_tmp + 1
-            else:
-                sql = """
-                                                               UPDATE DiscordActivity
-                                                               SET Weekly_Activity = ?
-                                                               AND Active_Days_Weekly ?
-                                                               WHERE User = ?
-                                                            """
-                data = ("Inactive", 0, user)
-                cursor.execute(sql, data)
-                inact_temp = inact_temp + 1
-            temp2 = temp2 + 1
+                if active_days >= def_active_days:
+                    sql = """
+                                                           UPDATE DiscordActivity
+                                                           SET Weekly_Activity = ?
+                                                           AND Active_Days_Weekly ? 
+                                                           WHERE User_ID = ?
+                                                        """
+                    data = ("Active", 0,  userid)
+                    cursor.execute(sql, data)
+                    act_tmp = act_tmp + 1
+                else:
+                    sql = """
+                                                                   UPDATE DiscordActivity
+                                                                   SET Weekly_Activity = ?
+                                                                   AND Active_Days_Weekly ?
+                                                                   WHERE User_ID = ?
+                                                                """
+                    data = ("Inactive", 0, userid)
+                    cursor.execute(sql, data)
+                    inact_temp = inact_temp + 1
+                temp2 = temp2 + 1
 
-        print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
+                sql = """
+                                                                                               UPDATE DiscordActivity
+                                                                                               SET Weekly_Activity = ?
+                                                                                               WHERE User_ID = ?
+                                                                                            """
+                data = (0, userid)
+                cursor.execute(sql, data)
+            print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
+            await asyncio.sleep(60 * 60 * 24)
+
+
+async def update_roles(): #0001
+    await client.wait_until_ready()
+    while not client.is_closed:
+        current_weekday = datetime.datetime.now().weekday()
+        await asyncio.sleep(2)
+        if current_weekday == 2 or current_weekday == 5:
+            print("-Processing Weekly Activity")
+            act_tmp = 0
+            inact_temp = 0
+            cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
+            rows = int(cursor.fetchone()[0])
+            if rows == 0:
+                break
+            temp2 = 0
+            while temp2 < rows:
+                cursor.execute("""SELECT User_ID FROM DiscordActivity""")
+                userid = str(cursor.fetchall()[temp2][0])
+                cursor.execute("""SELECT Active_Days_Weekly FROM DiscordActivity WHERE User_ID ?""", (userid,))
+                active_days = int(cursor.fetchone()[0])
+
+                if active_days >= def_active_days:
+                    update_role(userid, role_active, server_id)
+                else:
+                    update_role(userid, role_inactive, server_id)
+                temp2 = temp2 + 1
+            print("-Set Roles(Active/Inactive)       Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
+            await asyncio.sleep(60 * 60 * 24)
 
 
 @client.event#0004
@@ -132,13 +229,12 @@ async def on_ready():
     print("********************************************************************************************************")
 
 
-@client.event#0005
 async def list_servers():
     await client.wait_until_ready()
     while not client.is_closed:
         print("********************************************Current*Servers*********************************************")
         for server in client.servers:
-            print("     " + server.name + " (Members: " + str(len(server.members)) + ")")
+            print("     " + str(server.name) + " (Members: " + str(len(server.members)) + ")")
         print("********************************************************************************************************")
         await asyncio.sleep(60*60)
 
@@ -147,7 +243,7 @@ async def list_servers():
 async def display():
     await client.wait_until_ready()
     while not client.is_closed:
-        await client.change_presence(game=Game(name="TESTING - IN DEVELOPMENT"))  #?help
+        await client.change_presence(game=Game(name="?help"))  #?help
         await asyncio.sleep(20)
         await client.change_presence(game=Game(name="WATCHDOG (ACTIVE)"))
         await asyncio.sleep(5)
@@ -164,7 +260,7 @@ async def on_voice_state_update(before, after):
             await asyncio.sleep(0.5)
         finish = int(time.time())
         duration = ((finish - start) / 60)
-        cursor.execute("""SELECT * FROM DiscordActivity WHERE User LIKE (?)""", (('%' + after.name + '%'),))
+        cursor.execute("""SELECT * FROM DiscordActivity WHERE [User] LIKE (?)""", (('%' + after.name + '%'),))
         retn = cursor.fetchall()
         if len(retn) == 0:
             print("ERROR 0006 -- THE MEMBER *" + after.name + "* CANNOT BE LOCATED IN THE DATABASE")
@@ -172,7 +268,7 @@ async def on_voice_state_update(before, after):
             sql = """
                UPDATE DiscordActivity
                SET Minutes_Voice = Minutes_Voice + ?
-               WHERE User LIKE (?)
+               WHERE [User] LIKE (?)
             """
             data = (duration, ('%' + after.name + '%'))
             cursor.execute(sql, data)
@@ -180,25 +276,29 @@ async def on_voice_state_update(before, after):
 
 
 @client.event#0007
+@asyncio.coroutine
 async def on_message(message):
+    server = client.get_server(server_id)
     if message.author == client.user:#do not want the bot to reply to itself
         return
 
     author = str(message.author)
-    cursor.execute("""SELECT * FROM DiscordActivity WHERE User = ?""", (author,))
-    retn = cursor.fetchall()
-    if len(retn) == 0:
+    cursor.execute("""SELECT * FROM DiscordActivity WHERE User_ID = ?""", message.author.id,)
+    retn = cursor.fetchone()
+    if retn is None:
+        member2 = server.get_member(message.author.id)
+        usr_roles2 = fetch_roles(member2)
         print("Warning 0007 -- MEMBER *" + author + "* NOT FOUND - Adding user to DataBase")
-        cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, 0, 1, 0, 'NA', 'NA')""", (author, message.author.id
-                                                                                          , message.author.display_name))
+        cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, 0, 1, 0, 'NA', 'NA', ?)""", author, message.author.id
+                                                                                          , message.author.display_name, usr_roles2)
         conn.commit()
     else:
         sql = """
-                   UPDATE Activity
+                   UPDATE DiscordActivity
                    SET Messages_Sent = Messages_Sent + ?
-                   WHERE User = ? 
+                   WHERE User_ID = ? 
                 """
-        data = (1, author)
+        data = (1, message.author.id)
         cursor.execute(sql, data)
         conn.commit()
 
@@ -206,100 +306,137 @@ async def on_message(message):
         msg = 'Sup {0.author.mention}'.format(message)
         await client.send_message(message.channel, msg)
 
-    if message.content.startswith(BOT_PREFIX + 'report'):
-        import datetime
-        date = str(datetime.datetime.now().strftime("%y-%m-%d-%H-%M"))
-
-        cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
-        rows = int(cursor.fetchone()[0])
-        temp3 = 0
-        filename = 'member_activity_report.html'
-        file = open(filename, 'w')
-        file.write("<html><head><title>output</title></head><body bgcolor='#949494'>")
-        file.write("Member Activity Report - %s" % (date,))
-        file.write("            Members in Database - %s" % (str(rows),))
-        file.write("<table border = 1>")
-        file.write("<tr><th>" + "User" + "</th><th>" + "Minutes in Voice" + "</th><th>" + "Messages Sent" + "</th>")
-        file.write("<th>" + "Total Days Active" + "</th><th>" + "Daily Activity" + "</th>")
-        file.write("<th>" + "Weekly Activity" + "</th></tr>")
-        while temp3 < rows:
-            cursor.execute("""SELECT User FROM DiscordActivity""")
-            user = str(cursor.fetchall()[temp3][0])
-            cursor.execute("""SELECT Minutes_Voice FROM DiscordActivity WHERE User = ?""", (user,))
-            min_voice = int(cursor.fetchone()[0])
-            cursor.execute("""SELECT Messages_Sent FROM DiscordActivity WHERE User = ?""", (user,))
-            msg_sent = int(cursor.fetchone()[0])
-            cursor.execute("""SELECT Active_Days_Weekly FROM DiscordActivity WHERE User = ?""", (user,))
-            active_days = str(cursor.fetchone()[0])
-            cursor.execute("""SELECT Daily_Activity FROM DiscordActivity WHERE User = ?""", (user,))
-            daily_act = str(cursor.fetchone()[0])
-            cursor.execute("""SELECT Weekly_Activity FROM DiscordActivity WHERE User = ?""", (user,))
-            weekly_act = str(cursor.fetchone()[0])
-
-            file.write("<tr>")
-            print("tr")
-            try:
-                file.write("<th>%s</th>" % (user,))
-            except:
-                user1 = user.encode(('utf-8'))
-                file.write("<th>%s</th>" % ((user1),))
-            print("us")
-            file.write("<th>%s</th>" % (min_voice,))
-            file.write("<th>%s</th>" % (msg_sent,))
-            file.write("<th>%s</th><th>%s</th><th>%s</th></tr>" % (active_days, daily_act, weekly_act))
-            temp3 = temp3 + 1
-        file.write("</table>")
-        file.write("*Note: For text the website don't understand is converted to utf-8")
-        file.write("</body></html>")
-        file.close()
-        await client.send_file(message.channel, 'member_activity_report.html')
-
     if message.content.startswith(BOT_PREFIX + 'help'):
-        msg = '```css\n' \
-              'List of Help Commands:\n' \
-              'Report: - Sends a html file containing user activity\n' \
-              '```'.format(message)
-        await client.send_message(message.channel, msg)
+        emb = (discord.Embed(title="Help Commands:", color=0xe1960b))
+        emb.set_author(name="Stormbot")
+        emb.add_field(name='?roles', value='Gets the current roles that a member belongs to. Use \'?roles\' to '
+                                             'get your current roles or \'?roles @Member\' to get another members '
+                                             'current roles.', inline=True)
+        emb.add_field(name='?activity', value='Gets the current activity of a member. Use \'?activity\' to '
+                                           'get your current activity or \'?roles @Member\' to get another members '
+                                           'activity.', inline=True)
+        await client.send_message(message.channel, embed=emb)
 
-    if message.content.startswith(BOT_PREFIX + 'test'):
-        cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
-        rows = cursor.fetchone()
-        print(rows)
-        cursor.execute("SELECT * FROM Activity")
-        print(cursor.fetchall()[1])
+    if message.content.startswith(BOT_PREFIX + 'roles'):
+        if "<@" in message.content:
+            member = server.get_member(str(message.content[9:-1]))
+        else:
+            member = server.get_member(message.author.id)
+        usr_roles = fetch_roles(member)
+        await client.send_message(message.channel, str(usr_roles))
 
-    if message.content.startswith(BOT_PREFIX + 'db'):
-        cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
-        rows = int(cursor.fetchone()[0])
-        members = 0
-        for server in client.servers:
-            members = members + len(server.members)
-        msg = ('I have ' + str(rows) + " of " + str(members - 3) + " Members in the Database")
-        await client.send_message(message.channel, msg.format(message))
-        msg2 = ('I have ' + str((members - 3) - rows) + ' left to put in the Database')
-        await client.send_message(message.channel, msg2.format(message))
+    if message.content.startswith(BOT_PREFIX + 'activity'):
+        if "<@" in message.content:
+            member_id = str(message.content[12:-1])
+        else:
+            member_id = str(message.author.id)
+        print(str(member_id))
+        cursor.execute("""SELECT * FROM DiscordActivity WHERE User_ID = ?""", member_id, )
+        user_dat = cursor.fetchall()
+        print(str(user_dat))
+        if str(user_dat) != '[]':
+            emb = (discord.Embed(title="Activity Request:", color=0x49ad3f))
+            emb.set_author(name="Stormbot")
+            emb.add_field(name='User', value=user_dat[0][1], inline=True)
+            emb.add_field(name='User ID', value=user_dat[0][2], inline=True)
+            emb.add_field(name='Nickname/Battle NET ID', value=user_dat[0][3], inline=True)
+            emb.add_field(name='Current Voice Activity', value=user_dat[0][4], inline=True)
+            emb.add_field(name='Current Message Activity', value=user_dat[0][5], inline=True)
+            emb.add_field(name='Yesterday Activity(24hrs)', value=user_dat[0][6], inline=True)
+            emb.add_field(name='Previous Week Activity(7 days)', value=user_dat[0][7], inline=True)
+            await client.send_message(message.channel, embed=emb)
+        else:
+            emb = (discord.Embed(title="Activity Request:", color=0x49ad3f))
+            emb.set_author(name="Stormbot")
+            emb.add_field(name='ERROR - BAD REQUEST', value='That Member don\'t exist. Either the Member is not in the database,'
+                                              ' you fucked up, '
+                                              'or the programmer fucked up.', inline=True)
+            emb.set_footer(text="If the member exists and the error is repeated please notify ZombieEar#0493 ")
+            await client.send_message(message.channel, embed=emb)
+    '''
+    if message.content.startswith(BOT_PREFIX + 'set'):
+        member = server.get_member(message.author.id)
+        if member.server_permissions.administrator:
+            if message.content.startswith == '?set def_voice':
+                if message.content == '?set def_voice':
+                    await client.send_message(message.channel, 'No value specified. To Update '
+                                                               'Default Voice No enter'
+                                                               ' \'?set def_voice Value\''.format(message))
+                else:
+                    value = message.content[15:]
+                    sql = """
+                                                                                                       UPDATE DiscordActivity
+                                                                                                       SET NoVoice = ?
+                                                                                                    """
+
+                    cursor.execute(sql, value)
+                    def_voice = value
+                    print("value")
+            if message.content == '?set def_message':
+                print("")
+            if message.content == '?set active_days':
+                print("")
+            if message.content == '?set active_role':
+                print("")
+            if message.content == '?set inactive_role':
+                print("")
+    '''
+    if message.content.startswith(BOT_PREFIX + 'system'):
+        member = server.get_member(message.author.id)
+        if member.server_permissions.administrator == True:
+            print("Access Granted")
+            if message.content == '?system refresh_roles':
+                msg = 'Access Granted - Force Update Roles (Started) - Please Wait...'
+                await client.send_message(message.channel, msg.format(message))
+                server = client.get_server(server_id)
+                cursor.execute("""SELECT * FROM DiscordActivity""")
+                user_dat = cursor.fetchall()
+                if len(user_dat) == 0:
+                    print("Refresh - Error")
+                temp8 = 0
+                while temp8 < len(user_dat):
+                    member = server.get_member(str(user_dat[temp8][2]))
+                    if str(member) == 'None':
+                        usr_roles = 'ERROR GETTING ROLES'
+                    else:
+                        usr_roles = fetch_roles(member)
+
+                    sql = """
+                                                                                   UPDATE DiscordActivity
+                                                                                   SET Discord_Roles = ?
+                                                                                   WHERE User_ID = ?
+                                                                                """
+                    data = (usr_roles, user_dat[temp8][2])
+                    cursor.execute(sql, data)
+                    temp8 = temp8 + 1
+                msg2 = ('Force Update Roles (Finished) - Updated:' + str(len(user_dat)) + ' Members')
+                await client.send_message(message.channel, msg2.format(message))
+        else:
+            print("Access Denied - U no admin")
 
 
 @client.event#0008
 async def on_member_join(member):
+    roles = fetch_roles(member)
     user = str(member)
-    cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, 0, 0, 0, 'NA', 'NA')""", (user, str(member.id)
-                                                                                      , str(member.nick)))
+    cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, 0, 0, 0, 'NA', 'NA', ?)""", (user, str(member.id)
+                                                                                      , str(member.nick), str(roles)))
     conn.commit()
-    print("-on_member_join   User Joined      User:" + user)
+    print("-on_member_join      User Joined      User:" + user)
 
 
 @client.event#0009
 async def on_member_remove(member):
+    userid = str(member.id)
     user = str(member)
-    cursor.execute("""DELETE FROM DiscordActivity WHERE User = ?""", (user, ))
+    cursor.execute("""DELETE FROM DiscordActivity WHERE User_ID = ?""", (userid, ))
     conn.commit()
     print("-on_member_remove   User Left     User:" + user)
 
 
 @client.event
 async def on_member_update(before, after):
-    cursor.execute("""SELECT * FROM DiscordActivity WHERE User LIKE (?)""", (('%' + after.name + '%'),))
+    cursor.execute("""SELECT * FROM DiscordActivity WHERE [User] LIKE (?)""", (('%' + after.name + '%'),))
     retn = cursor.fetchall()
     if before.nick != after.nick:
         if len(retn) == 0:
@@ -308,7 +445,7 @@ async def on_member_update(before, after):
             sql = """
                        UPDATE DiscordActivity
                        SET User_Nickname = ?
-                       WHERE User LIKE (?)
+                       WHERE [User] LIKE (?)
                     """
             data = (str(after.nick), ('%' + after.name + '%'))
             cursor.execute(sql, data)
@@ -317,11 +454,38 @@ async def on_member_update(before, after):
                   + str(after.nick) + "*")
 
 
-def set_role(user, role):
-    print("")
+def update_role(userid, role, serverid):
+    #serverid = message.channel.server.id
+    server = client.get_server(serverid)
+    role = discord.utils.get(server.roles, name=role)
+    member = server.get_member(userid)
+    client.add_roles(member, role)
+    if role == role_active:
+        role1 = discord.utils.get(server.roles, name=role_inactive)
+        client.add_roles(member, role1)
+    if role == role_inactive:
+        role2 = discord.utils.get(server.roles, name=role_active)
+        client.add_roles(member, role2)
+
+
+def fetch_roles(member):
+    roles_list_ob = member.roles
+    roles_len = len(roles_list_ob)
+    if roles_len != 0:
+        temp4 = 1
+        roles_st = ''
+        while temp4 < roles_len:
+            roles_st = roles_st + roles_list_ob[temp4].name
+            if temp4 >= 1:
+                roles_st = roles_st + ','
+            temp4 = temp4 + 1
+        return roles_st[:-1]
+    else:
+        return 'NONE'
 
 
 client.loop.create_task(display())
+client.loop.create_task(update_roles())
 client.loop.create_task(list_servers())
 client.loop.create_task(update_activity_daily())
 client.loop.create_task(update_activity_weekly())
