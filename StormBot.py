@@ -39,7 +39,7 @@ else:
                           (NoVoice integer , NoMessages integer, ActiveDays integer, ActiveRole text, InactiveRole text, BeginDate text, ActiveDaysRoles integer)
                        """)
     connect.commit()
-    cursor2.execute("""INSERT INTO Presets VALUES (?,?,?,?,?,?,?)""", (60, 5, 4, "ACTIVE_SB", "INACTIVE_SB", '2018-07-12 10:58:58', 2))
+    cursor2.execute("""INSERT INTO Presets VALUES (?,?,?,?,?,?,?)""", (60, 5, 4, "ACTIVE_SB", "INACTIVE_SB", '2018-07-22 00:00:00', 2))
     connect.commit()
 
 #server_id = '162706186272112640'#StormBot
@@ -47,81 +47,6 @@ server_id = '451097751975886858'#TestBot
 
 BOT_PREFIX = "?"
 client = Bot(command_prefix=BOT_PREFIX)
-
-
-async def update_activity_daily(): #0001
-    await client.wait_until_ready()
-    while not client.is_closed:
-        await asyncio.sleep(29999)
-        current_time = datetime.datetime.now()
-        today1am = current_time.replace(hour=1, minute=0)
-        if current_time == today1am:
-            print("-Processing Daily Activity --- " + str(current_time))
-            cursor.execute("""SELECT * FROM DiscordActivity""")
-            user_dat = cursor.fetchall()
-            cursor2.execute("""SELECT * FROM Presets""")
-            conf_dat = cursor2.fetchall()
-            def_voice = conf_dat[0][0]
-            def_msg = conf_dat[0][1]
-            if len(user_dat) == 0:
-               break
-            else:
-                temp = 0
-                act_tmp = 0
-                inact_temp = 0
-                while temp < len(user_dat):
-                    user_id = str(user_dat[temp][2])
-                    voice_val = int(str(user_dat[temp][4]))
-                    msg_val = int(user_dat[temp][5])
-
-                    if voice_val >= def_voice and msg_val >= def_msg:
-                        sql = """
-                                               UPDATE DiscordActivity
-                                               SET Daily_Activity = ?, Active_Days_Weekly = Active_Days_Weekly + ?
-                                               WHERE User_ID = ?
-                                            """
-                        data = ('Active', 1, user_id)
-                        cursor.execute(sql, data)
-                        conn.commit()
-                        act_tmp = act_tmp + 1
-                    else:
-                        sql = """
-                                                       UPDATE DiscordActivity
-                                                       SET Daily_Activity = ?
-                                                       WHERE User_ID = ?
-                                                    """
-                        data = ("Inactive", user_id)
-                        cursor.execute(sql, data)
-                        conn.commit()
-                        inact_temp = inact_temp + 1
-                    temp = temp + 1
-
-                    begindate = conf_dat[0][5]
-
-                    cursor.execute("""INSERT INTO DiscordActivityArchive VALUES (?,?,?,?)""", user_id, voice_val, msg_val
-                                   , begindate)
-                    conn.commit()
-                    
-                    sql = """
-                                                                                       UPDATE DiscordActivity
-                                                                                       SET Minutes_Voice = ?, Messages_Sent = ?
-                                                                                       WHERE User_ID = ?
-                                                                                    """
-                    data = (0, 0, user_id)
-                    cursor.execute(sql, data)
-                    conn.commit()
-
-                ts = time.time()
-                enddate = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-                sql = """
-                                                                                                      UPDATE Presets
-                                                                                                      SET BeginDate = ?
-                                                                                                """
-                data = (enddate,)
-                cursor2.execute(sql, data)
-                connect.commit()
-                print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
-                await asyncio.sleep(80)
 
 
 async def update_activity_weekly(): #0001
@@ -133,86 +58,119 @@ async def update_activity_weekly(): #0001
             print("-Processing Weekly Activity")
             act_tmp = 0
             inact_temp = 0
-            cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
-            rows = int(cursor.fetchone()[0])
+            cursor.execute("""SELECT * FROM DiscordActivity""")
+            user_dat = cursor.fetchall()
             cursor2.execute("""SELECT * FROM Presets""")
             conf_dat = cursor2.fetchall()
-            def_active_days = conf_dat[0][2]
-            if rows == 0:
+            def_voice = conf_dat[0][0]
+            def_msg = conf_dat[0][1]
+            if len(user_dat) == 0:
                 break
-            temp2 = 0
-            while temp2 < rows:
-                cursor.execute("""SELECT User_ID FROM DiscordActivity""")
-                userid = str(cursor.fetchall()[temp2][0])
-                cursor.execute("""SELECT Active_Days_Weekly FROM DiscordActivity WHERE User_ID = ?""", (userid,))
-                active_days = int(cursor.fetchone()[0])
+            temp = 0
+            while temp < len(user_dat):
+                userid = str(user_dat[temp][2])
+                voice_val = int(str(user_dat[temp][4]))
+                msg_val = int(user_dat[temp][5])
 
-                if active_days >= def_active_days:
+                if voice_val >= def_voice and msg_val >= def_msg:
                     sql = """
                                                            UPDATE DiscordActivity
-                                                           SET Weekly_Activity = ?, Active_Days_Weekly = ? 
+                                                           SET Weekly_Activity = ? 
                                                            WHERE User_ID = ?
                                                         """
-                    data = ("Active", 0,  userid)
+                    data = ("Active", userid)
                     cursor.execute(sql, data)
                     conn.commit()
                     act_tmp = act_tmp + 1
                 else:
                     sql = """
                                                                    UPDATE DiscordActivity
-                                                                   SET Weekly_Activity = ?, Active_Days_Weekly = ?
+                                                                   SET Weekly_Activity = ?
                                                                    WHERE User_ID = ?
                                                                 """
-                    data = ("Inactive", 0, userid)
+                    data = ("Inactive", userid)
                     cursor.execute(sql, data)
                     conn.commit()
                     inact_temp = inact_temp + 1
-                temp2 = temp2 + 1
+                temp = temp + 1
+
+                begindate = conf_dat[0][5]
+
+                cursor.execute("""INSERT INTO DiscordActivityArchive VALUES (?,?,?,?)""", userid, voice_val, msg_val
+                               , begindate)
+                conn.commit()
 
                 sql = """
-                                                                                               UPDATE DiscordActivity
-                                                                                               SET Weekly_Activity = ?
-                                                                                               WHERE User_ID = ?
-                                                                                            """
-                data = (0, userid)
+                                                                                                       UPDATE DiscordActivity
+                                                                                                       SET Minutes_Voice = ?, Messages_Sent = ?
+                                                                                                       WHERE User_ID = ?
+                                                                                                    """
+                data = (0, 0, userid)
                 cursor.execute(sql, data)
                 conn.commit()
+
+            ts = time.time()
+            enddate = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
+            sql = """
+                                                                                                                      UPDATE Presets
+                                                                                                                      SET BeginDate = ?
+                                                                                                                """
+            data = (enddate,)
+            cursor2.execute(sql, data)
+            connect.commit()
             print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
             await asyncio.sleep(60 * 60 * 24)
 
 
+@asyncio.coroutine
 async def update_roles(): #0001
     await client.wait_until_ready()
     while not client.is_closed:
         current_weekday = datetime.datetime.now().weekday()
-        await asyncio.sleep(2999999)
-        if current_weekday == 2 or current_weekday == 5:
-            print("-Updateing Roles")
-            act_tmp = 0
-            inact_temp = 0
-            cursor.execute("""SELECT COUNT(*) FROM DiscordActivity""")
-            rows = int(cursor.fetchone()[0])
+        await asyncio.sleep(2)
+        if current_weekday == 5:
+            print("-Processing Role Update --- " + str(current_weekday))
+            cursor.execute("""SELECT * FROM DiscordActivity""")
+            user_dat = cursor.fetchall()
             cursor2.execute("""SELECT * FROM Presets""")
             conf_dat = cursor2.fetchall()
             role_active = conf_dat[0][3]
             role_inactive = conf_dat[0][4]
-            def_active_roles = conf_dat[0][6]
-            if rows == 0:
+            def_voice = conf_dat[0][0]
+            def_msg = conf_dat[0][1]
+            server = client.get_server(server_id)
+            role_ac = discord.utils.get(server.roles, name=role_active)
+            role_in = discord.utils.get(server.roles, name=role_inactive)
+            if len(user_dat) == 0:
                 break
-            temp2 = 0
-            while temp2 < rows:
-                cursor.execute("""SELECT User_ID FROM DiscordActivity""")
-                userid = str(cursor.fetchall()[temp2][0])
-                cursor.execute("""SELECT Active_Days_Weekly FROM DiscordActivity WHERE User_ID = ?""", (userid,))
-                active_days = int(cursor.fetchone()[0])
+            else:
+                temp = 0
+                act_tmp = 0
+                inact_temp = 0
+                while temp < len(user_dat):
+                    userid = str(user_dat[temp][2])
+                    voice_val = int(str(user_dat[temp][4]))
+                    msg_val = int(user_dat[temp][5])
+                    member = server.get_member(userid)
 
-                if active_days >= def_active_roles:
-                    update_role(userid, role_active, server_id)
-                else:
-                    update_role(userid, role_inactive, server_id)
-                temp2 = temp2 + 1
-            print("-Set Roles(Active/Inactive)       Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
-            await asyncio.sleep(60 * 60 * 24)
+                    if voice_val >= def_voice and msg_val >= def_msg:
+                        try:
+                            await client.add_roles(member, role_ac)
+                            await client.remove_roles(member, role_in)
+                            act_tmp = act_tmp + 1
+                        except Exception as e:
+                            print(repr(e))
+                    else:
+                        try:
+                            await client.add_roles(member, role_in)
+                            await client.remove_roles(member, role_ac)
+                            inact_temp = inact_temp + 1
+                        except Exception as e:
+                            print(repr(e))
+                    temp = temp + 1
+
+                print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
+                await asyncio.sleep(80)
 
 
 @client.event#0004
@@ -249,31 +207,36 @@ async def display():
 
 @client.event#0006
 async def on_voice_state_update(before, after):
-    if before.voice.voice_channel is None and after.voice.voice_channel is not None:
+    server = client.get_server(server_id)
+    channel = discord.utils.get(server.channels, name='AFK', type='Voice')
+    if in_voice_channel(before, server, 'AFK') == False:
         if before.voice.voice_channel is None and after.voice.voice_channel is not None:
-            start = int(time.time())
-        while before.voice.voice_channel is None and after.voice.voice_channel is not None:
-            await asyncio.sleep(0.5)
-        finish = int(time.time())
-        duration = ((finish - start) / 60)
-        cursor.execute("""SELECT * FROM DiscordActivity WHERE User_ID = ?""", (after.id,))
-        retn = cursor.fetchall()
-        if len(retn) == 0:
-            print("Warning 0008 -- MEMBER *" + str(after) + "* NOT FOUND - Adding user to DataBase")
-            roles = fetch_roles(after)
-            user = str(after)
-            cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
-                           (user, str(after.id), str(after.nick), duration, str(roles)))
-            conn.commit()
-        else:
-            sql = """
-               UPDATE DiscordActivity
-               SET Minutes_Voice = Minutes_Voice + ?
-               WHERE User_ID = ?
-            """
-            data = (duration, after.id)
-            cursor.execute(sql, data)
-            conn.commit()
+            if before.voice.voice_channel is None and after.voice.voice_channel is not None:
+                start = int(time.time())
+            while before.voice.voice_channel is None and after.voice.voice_channel is not None:
+                await asyncio.sleep(0.5)
+            finish = int(time.time())
+            duration = ((finish - start) / 60)
+            print(str(duration))
+            print(str(int(duration)))
+            cursor.execute("""SELECT * FROM DiscordActivity WHERE User_ID = ?""", (after.id,))
+            retn = cursor.fetchall()
+            if len(retn) == 0:
+                print("Warning 0008 -- MEMBER *" + str(after) + "* NOT FOUND - Adding user to DataBase")
+                roles = fetch_roles(after)
+                user = str(after)
+                cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
+                               (user, str(after.id), str(after.nick), int(duration), str(roles)))
+                conn.commit()
+            else:
+                sql = """
+                   UPDATE DiscordActivity
+                   SET Minutes_Voice = Minutes_Voice + ?
+                   WHERE User_ID = ?
+                """
+                data = (duration, after.id)
+                cursor.execute(sql, data)
+                conn.commit()
 
 
 @client.event#0007
@@ -312,9 +275,11 @@ async def on_message(message):
         emb.add_field(name='?roles', value='Gets the current roles that a member belongs to. Use \'?roles\' to '
                                              'get your current roles or \'?roles @Member\' to get another members '
                                              'current roles.', inline=True)
+        emb.add_field(name='?change_nick', value='Changes the nickname of the current member. Ex. \'?change_nick StormBot#1234\'', inline=True)
         emb.add_field(name='?activity', value='Gets the current activity of a member. Use \'?activity\' to '
                                            'get your current activity or \'?roles @Member\' to get another members '
-                                           'activity.', inline=True)
+                                           'activity.\n'
+                                            '*AVAILABLE TO MODERATORS AND ADMINISTRATORS ONLY*', inline=True)
         emb.add_field(name='?set help', value='Shows a list of commands to set the Bot Presets\n'
                                               '*AVAILABLE TO ADMINISTRATORS ONLY*', inline=True)
         await client.send_message(message.channel, embed=emb)
@@ -328,36 +293,40 @@ async def on_message(message):
         await client.send_message(message.channel, str(usr_roles))
 
     if message.content.startswith(BOT_PREFIX + 'activity'):
-        if "<@" in message.content:
-            member_id = str(message.content[12:-1])
+        member = server.get_member(message.author.id)
+        mod_ck = moderator_check(message.author.id, server_id)
+        if (mod_ck is True) or member.server_permissions.administrator:
+            if "<@" in message.content:
+                member_id = str(message.content[12:-1])
+            else:
+                member_id = str(message.author.id)
+            cursor.execute("""SELECT * FROM DiscordActivity WHERE User_ID = ?""", member_id, )
+            user_dat = cursor.fetchall()
+            if str(user_dat) != '[]':
+                emb = (discord.Embed(title="Activity Request:", color=0x49ad3f))
+                emb.add_field(name='User', value=user_dat[0][1], inline=True)
+                emb.add_field(name='User ID', value=user_dat[0][2], inline=True)
+                emb.add_field(name='Nickname/BattleTag', value=user_dat[0][3], inline=True)
+                emb.add_field(name='Current Voice Activity', value=user_dat[0][4], inline=True)
+                emb.add_field(name='Current Message Activity', value=user_dat[0][5], inline=True)
+                emb.add_field(name='Previous Week Activity(7 days)', value=user_dat[0][8], inline=True)
+                await client.send_message(message.channel, embed=emb)
+            else:
+                emb = (discord.Embed(title="Activity Request:", color=0x49ad3f))
+                emb.set_author(name="Stormbot")
+                emb.add_field(name='ERROR - BAD REQUEST', value='That Member don\'t exist. Either the Member is not in the database,'
+                                                  ' you fucked up, '
+                                                  'or the programmer fucked up.', inline=True)
+                emb.set_footer(text="If the member exists and the error is repeated please notify ZombieEar#0493 ")
+                await client.send_message(message.channel, embed=emb)
         else:
-            member_id = str(message.author.id)
-        cursor.execute("""SELECT * FROM DiscordActivity WHERE User_ID = ?""", member_id, )
-        user_dat = cursor.fetchall()
-        if str(user_dat) != '[]':
-            emb = (discord.Embed(title="Activity Request:", color=0x49ad3f))
-            emb.add_field(name='User', value=user_dat[0][1], inline=True)
-            emb.add_field(name='User ID', value=user_dat[0][2], inline=True)
-            emb.add_field(name='Nickname/Battle NET ID', value=user_dat[0][3], inline=True)
-            emb.add_field(name='Current Voice Activity', value=user_dat[0][4], inline=True)
-            emb.add_field(name='Current Message Activity', value=user_dat[0][5], inline=True)
-            emb.add_field(name='Yesterday Activity(24hrs)', value=user_dat[0][6], inline=True)
-            emb.add_field(name='Previous Week Activity(7 days)', value=user_dat[0][7], inline=True)
-            await client.send_message(message.channel, embed=emb)
-        else:
-            emb = (discord.Embed(title="Activity Request:", color=0x49ad3f))
-            emb.set_author(name="Stormbot")
-            emb.add_field(name='ERROR - BAD REQUEST', value='That Member don\'t exist. Either the Member is not in the database,'
-                                              ' you fucked up, '
-                                              'or the programmer fucked up.', inline=True)
-            emb.set_footer(text="If the member exists and the error is repeated please notify ZombieEar#0493 ")
-            await client.send_message(message.channel, embed=emb)
+            await client.send_message(message.channel, 'Access Denied - You are not a Moderator or Administrator'.format(message))
 
     if message.content.startswith(BOT_PREFIX + 'set'):
         member = server.get_member(message.author.id)
         if member.server_permissions.administrator:
-            if message.content.startswith('?set def_voice'):
-                if message.content == '?set def_voice':
+            if message.content.startswith(BOT_PREFIX + 'set def_voice'):
+                if message.content == (BOT_PREFIX + 'set def_voice'):
                     await client.send_message(message.channel, 'No value specified. To Update '
                                                                'Default Voice No enter'
                                                                ' \'?set def_voice Value\''.format(message))
@@ -370,8 +339,8 @@ async def on_message(message):
                     cursor2.execute(sql, (value,))
                     connect.commit()
                     await client.send_message(message.channel, ('The Default number of requred voice minutes has been updated to (' + value + ')').format(message))
-            if message.content.startswith('?set def_message'):
-                if message.content == '?set def_message':
+            if message.content.startswith(BOT_PREFIX + 'set def_message'):
+                if message.content == (BOT_PREFIX + 'set def_message'):
                     await client.send_message(message.channel, 'No value specified. To Update '
                                                                'Default Messages No enter'
                                                                ' \'?set def_message Value\''.format(message))
@@ -384,22 +353,8 @@ async def on_message(message):
                     cursor2.execute(sql, (value,))
                     connect.commit()
                     await client.send_message(message.channel, ('The Default number of requred messages has been updated to (' + value + ')').format(message))
-            if message.content.startswith('?set active_days'):
-                if message.content == '?set active_days':
-                    await client.send_message(message.channel, 'No value specified. To Update '
-                                                               'Default ActiveDays No enter'
-                                                               ' \'?set def_message Value\''.format(message))
-                else:
-                    value = message.content[17:]
-                    sql = """
-                            UPDATE Presets
-                            SET ActiveDays = ?
-                        """
-                    cursor2.execute(sql, (value,))
-                    connect.commit()
-                    await client.send_message(message.channel, ('The Default number of requred ActiveDays has been updated to (' + value + ')').format(message))
-            if message.content.startswith('?set active_role'):
-                if message.content == '?set active_role':
+            if message.content.startswith(BOT_PREFIX + 'set active_role'):
+                if message.content == (BOT_PREFIX + 'set active_role'):
                     await client.send_message(message.channel, 'No value specified. To Update '
                                                                'Default Active Role enter'
                                                                ' \'?set def_message Value\''.format(message))
@@ -412,8 +367,9 @@ async def on_message(message):
                     cursor2.execute(sql, (value,))
                     connect.commit()
                     await client.send_message(message.channel, ('The Default Active Role has been updated to (' + value + ')').format(message))
-            if message.content.startswith('?set inactive_role'):
-                if message.content == '?set inactive_role':
+                    print("Active Role Updated to *" + str(value) + '*')
+            if message.content.startswith(BOT_PREFIX + 'set inactive_role'):
+                if message.content == (BOT_PREFIX + 'set inactive_role'):
                     await client.send_message(message.channel, 'No value specified. To Update '
                                                                'Default Inactive Role enter'
                                                                ' \'?set def_message Value\''.format(message))
@@ -426,7 +382,8 @@ async def on_message(message):
                     cursor2.execute(sql, (value,))
                     connect.commit()
                     await client.send_message(message.channel, ('The Default Inactive Role has been updated to (' + value + ')').format(message))
-            if message.content.startswith('?set display'):
+                    print("Inactive Role Updated to *" + str(value) + '*')
+            if message.content.startswith(BOT_PREFIX + 'set display'):
                 cursor2.execute("""SELECT * FROM Presets""")
                 conf_dat = cursor2.fetchall()
 
@@ -436,15 +393,14 @@ async def on_message(message):
                 emb3.add_field(name='Active Days', value=conf_dat[0][2], inline=True)
                 emb3.add_field(name='Active Role', value=conf_dat[0][3], inline=True)
                 emb3.add_field(name='Inactive Role', value=conf_dat[0][4], inline=True)
-                emb3.add_field(name='Active Days Roles Update', value=conf_dat[0][6], inline=True)
+                emb3.add_field(name='Active Days For Roles Update', value=conf_dat[0][6], inline=True)
                 await client.send_message(message.channel, embed=emb3)
-            if message.content.startswith('?set help'):
+            if message.content.startswith(BOT_PREFIX + 'set help'):
                 emb = (discord.Embed(title="Set Help Commands:", color=0xee1b15))
-                emb.add_field(name='?set def_voice', value='Use \'?set def_voice Value\' to update the Default Voice preset value', inline=True)
-                emb.add_field(name='?set def_message', value='Use \'?set def_message Value\' to update the Default Messages preset value', inline=True)
-                emb.add_field(name='?set active_days', value='Use \'?set active_days Value\' to update the Default Active Days preset value', inline=True)
-                emb.add_field(name='?set active_role', value='Use \'?set active_role Value\' to update the Default Active Role preset value', inline=True)
-                emb.add_field(name='?set inactive_role', value='Use \'?set inactive_role Value\' to update the Default Inactive Role preset value', inline=True)
+                emb.add_field(name='?set def_voice', value='Use \'?set def_voice Value\' to update the Default Voice preset value. Example (?set def_voice 60)', inline=True)
+                emb.add_field(name='?set def_message', value='Use \'?set def_message Value\' to update the Default Messages preset value. Example (?set def_message 5)', inline=True)
+                emb.add_field(name='?set active_role', value='Use \'?set active_role Value\' to update the Default Active Role preset value. Example (?set active_rolee ACTIVE)', inline=True)
+                emb.add_field(name='?set inactive_role', value='Use \'?set inactive_role Value\' to update the Default Inactive Role preset value. Example (?set inactive_role INACTIVE)', inline=True)
                 emb.add_field(name='?set display', value='Use this command to display all the current presets', inline=True)
                 await client.send_message(message.channel, embed=emb)
         else:
@@ -453,12 +409,11 @@ async def on_message(message):
             emb5.set_footer(text="For further assistance please contact an Administrator")
             await client.send_message(message.channel, embed=emb5)
 
-    
     if message.content.startswith(BOT_PREFIX + 'system'):
         member = server.get_member(message.author.id)
         if member.server_permissions.administrator == True:
             print("Access Granted")
-            if message.content == '?system refresh_roles':
+            if message.content == (BOT_PREFIX + 'system refresh_roles'):
                 msg = 'Access Granted - Force Update Roles (Started) - Please Wait...'
                 await client.send_message(message.channel, msg.format(message))
                 server = client.get_server(server_id)
@@ -487,6 +442,18 @@ async def on_message(message):
         else:
             print("Access Denied - U no admin")
 
+    if message.content.startswith(BOT_PREFIX + 'change_nick'):
+        member = server.get_member(message.author.id)
+        if message.content == (BOT_PREFIX + 'change_nick'):
+            await client.send_message(message.channel, 'No value specified. To Update '
+                                                       'your Nickname/BattleTag enter'
+                                                       ' \'?set change_nick Value\''.format(message))
+        else:
+            value = message.content[13:]
+            await client.change_nickname(member, value)
+            msg = ('<@' + message.author.id + '> Your Nickname has been updated to \'' + value + '\'')
+            await client.send_message(message.channel, msg.format(message))
+
 
 @client.event#0008
 async def on_member_join(member):
@@ -495,8 +462,16 @@ async def on_member_join(member):
     cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, 0, 0, 0, 'NA', 'NA', ?)""", (user, str(member.id)
                                                                                       , str(member.nick), str(roles)))
     conn.commit()
+    embed = discord.Embed(title='Welcome to Collective Conscious!', color=0x05dd00)
+    embed.add_field(name='/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/', value='>', inline=False)
+    embed.add_field(name='We are excited that you are here, please apply to join the clan in #clan-application', value='>', inline=False)
+    embed.add_field(name='For server rules see #rules', value='>', inline=False)
+    embed.add_field(name='For any questions regarding you application status or discord roles consult a @Moderator', value='>', inline=False)
+    embed.add_field(name='All CoCo Clan members are required to change their nickname to their Battle Tag. This can be done by typing \'?change_nick BattleTag\'', value='(EX. \'?change_nick StormBot#1234\')', inline=False)
+    embed.set_footer(text='This is an automated message')
+    await client.send_message(member, embed=embed)
     print("-on_member_join      User Joined      User:" + user)
-
+    #embed=embed
 
 @client.event#0009
 async def on_member_remove(member):
@@ -515,7 +490,12 @@ async def on_member_update(before, after):
     retn = cursor.fetchall()
     if before.nick != after.nick:
         if len(retn) == 0:
-            print("ERROR 0006 -- THE MEMBER *" + str(after.name) + "* CANNOT BE LOCATED IN THE DATABASE")
+            print("Warning 0009 -- MEMBER *" + str(after) + "* NOT FOUND - Adding user to DataBase")
+            roles = fetch_roles(after)
+            user = str(after)
+            cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
+                           (user, str(after.id), str(after.nick), 0, str(roles)))
+            conn.commit()
         else:
             sql = """
                        UPDATE DiscordActivity
@@ -529,7 +509,12 @@ async def on_member_update(before, after):
                   + str(after.nick) + "*")
     if before.roles != after.roles:
         if len(retn) == 0:
-            print("ERROR 0007 -- THE MEMBER *" + str(after.name) + "* CANNOT BE LOCATED IN THE DATABASE")
+            print("Warning 0010 -- MEMBER *" + str(after) + "* NOT FOUND - Adding user to DataBase")
+            roles = fetch_roles(after)
+            user = str(after)
+            cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
+                           (user, str(after.id), str(after.nick), 0, str(roles)))
+            conn.commit()
         else:
             usr_roles2 = fetch_roles(after)
             usr_roles3 = fetch_roles(before)
@@ -545,7 +530,12 @@ async def on_member_update(before, after):
                   + str(usr_roles2) + "*")
     if str(before) != str(after):
         if len(retn) == 0:
-            print("ERROR 0008 -- THE MEMBER *" + str(after.name) + "* CANNOT BE LOCATED IN THE DATABASE")
+            print("Warning 0011 -- MEMBER *" + str(after) + "* NOT FOUND - Adding user to DataBase")
+            roles = fetch_roles(after)
+            user = str(after)
+            cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
+                           (user, str(after.id), str(after.nick), 0, str(roles)))
+            conn.commit()
         else:
 
             sql = """
@@ -560,23 +550,27 @@ async def on_member_update(before, after):
                   + str(after) + "*")
 
 
-def update_role(userid, role, serverid):
+@asyncio.coroutine
+async def update_role(userid, role, serverid):
     cursor2.execute("""SELECT * FROM Presets""")
     conf_dat = cursor2.fetchall()
     role_active = conf_dat[0][3]
     role_inactive = conf_dat[0][4]
 
-    #serverid = message.channel.server.id
     server = client.get_server(serverid)
-    role = discord.utils.get(server.roles, name=role)
     member = server.get_member(userid)
-    client.add_roles(member, role)
-    if role == role_active:
-        role1 = discord.utils.get(server.roles, name=role_inactive)
-        client.add_roles(member, role1)
-    if role == role_inactive:
-        role2 = discord.utils.get(server.roles, name=role_active)
-        client.add_roles(member, role2)
+    if str(role) == str(role_active):
+        role = discord.utils.get(server.roles, name=role_active)
+        await client.add_roles(member, role)
+        client.remove_roles(member, role)
+    else:
+        if str(role) == str(role_inactive):
+            role = discord.utils.get(server.roles, name=role_inactive)
+            await client.add_roles(member, role)
+            client.remove_roles(member, role)
+        else:
+            print('ERROR - NO ROLE')
+    #role2 = discord.utils.get(server.roles, name=role_active)
 
 
 def fetch_roles(member):
@@ -595,9 +589,34 @@ def fetch_roles(member):
         return 'NONE'
 
 
+def moderator_check(userid, serverid):#check if user is in a Moderator
+    server = client.get_server(serverid)
+    member = server.get_member(userid)
+    result = False
+    mod = 'Moderator'
+
+    roles = fetch_roles(member)
+
+    if mod in roles:
+        result = True
+    return result
+
+
+def in_voice_channel(member, server, channel_name):#check if member is in a specific voice channel
+    voicechannel = discord.utils.get(server.channels, name=channel_name, type=discord.ChannelType.voice)
+    members = voicechannel.voice_members
+    memids = []
+    for member in members:
+        memids.append(member.id)
+
+    if member.id in memids:
+        return True
+    else:
+        return False
+
+
 client.loop.create_task(display())
 client.loop.create_task(update_roles())
 client.loop.create_task(list_servers())
-client.loop.create_task(update_activity_daily())
 client.loop.create_task(update_activity_weekly())
 client.run(TOKEN)
