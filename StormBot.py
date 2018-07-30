@@ -36,14 +36,14 @@ else:
     connect = sqlite3.connect('pythonsqlite.db')
     cursor2 = connect.cursor()
     cursor2.execute("""CREATE TABLE Presets
-                          (NoVoice integer , NoMessages integer, ActiveDays integer, ActiveRole text, InactiveRole text, BeginDate text, ActiveDaysRoles integer)
+                          (NoVoice integer , NoMessages integer, GuestRole text, ActiveRole text, InactiveRole text, BeginDate text, StombotChannel text)
                        """)
     connect.commit()
-    cursor2.execute("""INSERT INTO Presets VALUES (?,?,?,?,?,?,?)""", (60, 5, 4, "ACTIVE_SB", "INACTIVE_SB", '2018-07-22 00:00:00', 2))
+    cursor2.execute("""INSERT INTO Presets VALUES (?,?,?,?,?,?,?)""", (120, 10, "381911719901134850", "SB_Test_A", "SB_Test_X", '2018-07-22 00:00:00', '466401774094516245'))
     connect.commit()
 
-#server_id = '162706186272112640'#StormBot
-server_id = '451097751975886858'#TestBot
+server_id = '162706186272112640'#StormBot
+#server_id = '451097751975886858'#TestBot
 
 BOT_PREFIX = "?"
 client = Bot(command_prefix=BOT_PREFIX)
@@ -171,6 +171,45 @@ async def update_roles(): #0001
 
                 print("Active:" + str(act_tmp) + "   Inactive:" + str(inact_temp))
                 await asyncio.sleep(80)
+
+
+@asyncio.coroutine
+async def check_not_in_clan():
+    await client.wait_until_ready()
+    while not client.is_closed:
+        await asyncio.sleep(2)
+        current_time = datetime.datetime.now()
+        today1am = current_time.replace(hour=1, minute=0)
+        if current_time == today1am:
+            print("-Processing Guest Update --- " + str(current_time))
+            cursor.execute("""select * from DiscordActivity d
+                                where User_ID not in (
+                                select User_ID from ClanMembers m
+                                join DiscordActivity d on d.User_ID=m.DiscordID
+                                where m.IsActive=1)
+                                and Discord_Roles not like '%Clan%'
+                                and Discord_Roles not like '%Bots%'
+                                and Discord_Roles not like '%Guest%'
+                                """)
+            user_dat = cursor.fetchall()
+            cursor2.execute("""SELECT * FROM Presets""")
+            conf_dat = cursor2.fetchall()
+            role_guest = conf_dat[0][2]
+            server = client.get_server(server_id)
+            role_guest = discord.utils.get(server.roles, id=role_guest)
+            if len(user_dat) == 0:
+                break
+            else:
+                temp = 0
+                while temp < len(user_dat):
+                    userid = str(user_dat[temp][2])
+                    member = server.get_member(userid)
+                    try:
+                        await client.add_roles(member, role_guest)
+                    except Exception as e:
+                        print(repr(e))
+                    temp = temp + 1
+            print("Guest Update - FINISHED")
 
 
 @client.event#0004
@@ -309,7 +348,7 @@ async def on_message(message):
                 emb.add_field(name='Nickname/BattleTag', value=user_dat[0][3], inline=True)
                 emb.add_field(name='Current Voice Activity', value=user_dat[0][4], inline=True)
                 emb.add_field(name='Current Message Activity', value=user_dat[0][5], inline=True)
-                emb.add_field(name='Previous Week Activity(7 days)', value=user_dat[0][8], inline=True)
+                emb.add_field(name='Previous 7-Day Activity', value=user_dat[0][8], inline=True)
                 await client.send_message(message.channel, embed=emb)
             else:
                 emb = (discord.Embed(title="Activity Request:", color=0x49ad3f))
@@ -357,7 +396,7 @@ async def on_message(message):
                 if message.content == (BOT_PREFIX + 'set active_role'):
                     await client.send_message(message.channel, 'No value specified. To Update '
                                                                'Default Active Role enter'
-                                                               ' \'?set def_message Value\''.format(message))
+                                                               ' \'?set active_role RoleName\''.format(message))
                 else:
                     value = message.content[17:]
                     sql = """
@@ -368,11 +407,26 @@ async def on_message(message):
                     connect.commit()
                     await client.send_message(message.channel, ('The Default Active Role has been updated to (' + value + ')').format(message))
                     print("Active Role Updated to *" + str(value) + '*')
+            if message.content.startswith(BOT_PREFIX + 'set guest_role'):
+                if message.content == (BOT_PREFIX + 'set guest_role'):
+                    await client.send_message(message.channel, 'No value specified. To Update '
+                                                               'Default Guest Role enter'
+                                                               ' \'?set guest_role RoleID\''.format(message))
+                else:
+                    value = message.content[16:]
+                    sql = """
+                            UPDATE Presets
+                            SET GuestRole = ?
+                        """
+                    cursor2.execute(sql, (value,))
+                    connect.commit()
+                    await client.send_message(message.channel, ('The Default Guest Role has been updated to (' + value + ')').format(message))
+                    print("Active Role Updated to *" + str(value) + '*')
             if message.content.startswith(BOT_PREFIX + 'set inactive_role'):
                 if message.content == (BOT_PREFIX + 'set inactive_role'):
                     await client.send_message(message.channel, 'No value specified. To Update '
                                                                'Default Inactive Role enter'
-                                                               ' \'?set def_message Value\''.format(message))
+                                                               ' \'?set inactive_role RoleName\''.format(message))
                 else:
                     value = message.content[19:]
                     sql = """
@@ -383,6 +437,21 @@ async def on_message(message):
                     connect.commit()
                     await client.send_message(message.channel, ('The Default Inactive Role has been updated to (' + value + ')').format(message))
                     print("Inactive Role Updated to *" + str(value) + '*')
+            if message.content.startswith(BOT_PREFIX + 'set channel_cleft'):
+                if message.content == (BOT_PREFIX + 'set channel_cleft'):
+                    await client.send_message(message.channel, 'No value specified. To update '
+                                                               'the Clan Member Left Channel enter'
+                                                               ' \'?set channel_cleft Channel_ID\''.format(message))
+                else:
+                    value = message.content[21:-1]
+                    sql = """
+                            UPDATE Presets
+                            SET StombotChannel = ?
+                        """
+                    cursor2.execute(sql, (value,))
+                    connect.commit()
+                    await client.send_message(message.channel, ('The Clan Member Left Channel has been updated to (' + value + ')').format(message))
+                    print("Inactive Role Updated to *" + str(value) + '*')
             if message.content.startswith(BOT_PREFIX + 'set display'):
                 cursor2.execute("""SELECT * FROM Presets""")
                 conf_dat = cursor2.fetchall()
@@ -390,17 +459,19 @@ async def on_message(message):
                 emb3 = (discord.Embed(title="Storm Bot Presets:", color=0xee1b15))
                 emb3.add_field(name='Voice Minutes', value=conf_dat[0][0], inline=True)
                 emb3.add_field(name='Messages', value=conf_dat[0][1], inline=True)
-                emb3.add_field(name='Active Days', value=conf_dat[0][2], inline=True)
+                emb3.add_field(name='GuestRole', value=conf_dat[0][2], inline=True)
                 emb3.add_field(name='Active Role', value=conf_dat[0][3], inline=True)
                 emb3.add_field(name='Inactive Role', value=conf_dat[0][4], inline=True)
-                emb3.add_field(name='Active Days For Roles Update', value=conf_dat[0][6], inline=True)
+                emb3.add_field(name='Clan Member Left Channel', value=conf_dat[0][6], inline=True)
                 await client.send_message(message.channel, embed=emb3)
             if message.content.startswith(BOT_PREFIX + 'set help'):
                 emb = (discord.Embed(title="Set Help Commands:", color=0xee1b15))
                 emb.add_field(name='?set def_voice', value='Use \'?set def_voice Value\' to update the Default Voice preset value. Example (?set def_voice 60)', inline=True)
                 emb.add_field(name='?set def_message', value='Use \'?set def_message Value\' to update the Default Messages preset value. Example (?set def_message 5)', inline=True)
+                emb.add_field(name='?set guest_role', value='Use \'?set guest_role Value\' to update the Default Active Role preset value. Example (?set active_role @Guest)', inline=True)
                 emb.add_field(name='?set active_role', value='Use \'?set active_role Value\' to update the Default Active Role preset value. Example (?set active_rolee ACTIVE)', inline=True)
                 emb.add_field(name='?set inactive_role', value='Use \'?set inactive_role Value\' to update the Default Inactive Role preset value. Example (?set inactive_role INACTIVE)', inline=True)
+                emb.add_field(name='?set ?set channel_cleft Channel_ID', value='Use this update the Clan Member Left Channel preset. Example (set channel_cleft #bot-logs)', inline=True)
                 emb.add_field(name='?set display', value='Use this command to display all the current presets', inline=True)
                 await client.send_message(message.channel, embed=emb)
         else:
@@ -453,28 +524,64 @@ async def on_message(message):
             await client.change_nickname(member, value)
             msg = ('<@' + message.author.id + '> Your Nickname has been updated to \'' + value + '\'')
             await client.send_message(message.channel, msg.format(message))
+    if message.content.startswith(BOT_PREFIX + 'content'):
+        msg = message.content.format(message)
+        print(str(message.content))
 
 
 @client.event#0008
 async def on_member_join(member):
-    roles = fetch_roles(member)
-    user = str(member)
-    cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, 0, 0, 0, 'NA', 'NA', ?)""", (user, str(member.id)
-                                                                                      , str(member.nick), str(roles)))
-    conn.commit()
-    embed = discord.Embed(title='Welcome to Collective Conscious!', color=0x05dd00)
-    embed.add_field(name='/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/', value='>', inline=False)
-    embed.add_field(name='We are excited that you are here, please apply to join the clan in #clan-application', value='>', inline=False)
-    embed.add_field(name='For server rules see #rules', value='>', inline=False)
-    embed.add_field(name='For any questions regarding you application status or discord roles consult a @Moderator', value='>', inline=False)
-    embed.add_field(name='All CoCo Clan members are required to change their nickname to their Battle Tag. This can be done by typing \'?change_nick BattleTag\'', value='(EX. \'?change_nick StormBot#1234\')', inline=False)
-    embed.set_footer(text='This is an automated message')
+    server = client.get_server(server_id)
+    add_member_database(member, server)
+    embed = discord.Embed(title="Welcome to Collective Conscious.", description="CoCo is a PC-only Destiny 2 clan covering both NA and EU.", color=0x008000)
+    embed.add_field(name='1. Server nickname', value='Your nickname must match your BattleTag regardless of clan member status.\n'
+                                                     'Example: PeachTree#11671\n Set your nickname using the command \'?change_nick BattleTag\'.', inline=False)
+    embed.add_field(name='2. Clan Applications', value='Head to the #clan-application channel and apply to one of '
+                                                       'the clans showing as "recruiting." Once you\'ve requested '
+                                                       'membership, post in #request-a-rank stating the clan you '
+                                                       'applied to and clan staff will process your request.', inline=False)
+    embed.add_field(name='3. Clan & Discord Information', value='Please take a moment to read over server rules '
+                                                                'in #rules as well as Frequently Asked Questions '
+                                                                'in #faq before asking questions, as you may find '
+                                                                'them answered!', inline=False)
+    embed.set_footer(text='I\'m a bot. If you have questions, please contact a Clan Leader, Admin, or Moderator!')
     await client.send_message(member, embed=embed)
-    print("-on_member_join      User Joined      User:" + user)
+    print("-on_member_join      User Joined      User:" + str(member))
     #embed=embed
+
 
 @client.event#0009
 async def on_member_remove(member):
+    cursor.execute("""SELECT * FROM DiscordActivity WHERE User_ID = ? and Discord_Roles LIKE '%Clan%'""", member.id)
+    user_dat = cursor.fetchall()
+    if len(user_dat) != 0:
+        cursor2.execute("""SELECT * FROM Presets""")
+        conf_dat = cursor2.fetchall()
+        stormbot_channel = conf_dat[0][6]
+        roles = str(user_dat[0][9])
+        indx = roles.index('Clan')
+        clan = ''
+        temp = indx
+        while str(roles[temp]) != ',':
+            clan = (clan + roles[temp])
+            temp = temp + 1
+        embed = discord.Embed(title="Clan Member Left Discord",
+                              description="User has now been purged from the DataBase", color=0x008000)
+        embed.add_field(name='User:',
+                        value=str(member),
+                        inline=False)
+        embed.add_field(name='User ID:',
+                        value=str(member.id),
+                        inline=False)
+        embed.add_field(name='BattleTag/Nickname:',
+                        value=str(member.nick),
+                        inline=False)
+        embed.add_field(name='Clan Role:',
+                        value=str(clan),
+                        inline=False)
+        embed.set_footer(text='This is an automated message')
+        await client.send_message(client.get_channel(stormbot_channel), embed=embed)
+        print(str(clan) + ' Member Left ' + str(member))
     userid = str(member.id)
     user = str(member)
     cursor.execute("""DELETE FROM DiscordActivity WHERE User_ID = ?""", (userid, ))
@@ -486,16 +593,12 @@ async def on_member_remove(member):
 
 @client.event
 async def on_member_update(before, after):
+    server = client.get_server(server_id)
     cursor.execute("""SELECT * FROM DiscordActivity WHERE User_ID = ?""", (after.id,))
     retn = cursor.fetchall()
     if before.nick != after.nick:
         if len(retn) == 0:
-            print("Warning 0009 -- MEMBER *" + str(after) + "* NOT FOUND - Adding user to DataBase")
-            roles = fetch_roles(after)
-            user = str(after)
-            cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
-                           (user, str(after.id), str(after.nick), 0, str(roles)))
-            conn.commit()
+            add_member_database(after, server)
         else:
             sql = """
                        UPDATE DiscordActivity
@@ -509,12 +612,7 @@ async def on_member_update(before, after):
                   + str(after.nick) + "*")
     if before.roles != after.roles:
         if len(retn) == 0:
-            print("Warning 0010 -- MEMBER *" + str(after) + "* NOT FOUND - Adding user to DataBase")
-            roles = fetch_roles(after)
-            user = str(after)
-            cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
-                           (user, str(after.id), str(after.nick), 0, str(roles)))
-            conn.commit()
+            add_member_database(after, server)
         else:
             usr_roles2 = fetch_roles(after)
             usr_roles3 = fetch_roles(before)
@@ -530,12 +628,7 @@ async def on_member_update(before, after):
                   + str(usr_roles2) + "*")
     if str(before) != str(after):
         if len(retn) == 0:
-            print("Warning 0011 -- MEMBER *" + str(after) + "* NOT FOUND - Adding user to DataBase")
-            roles = fetch_roles(after)
-            user = str(after)
-            cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
-                           (user, str(after.id), str(after.nick), 0, str(roles)))
-            conn.commit()
+            add_member_database(after, server)
         else:
 
             sql = """
@@ -615,8 +708,18 @@ def in_voice_channel(member, server, channel_name):#check if member is in a spec
         return False
 
 
+def add_member_database(member, server):
+    print("Warning 0012 -- MEMBER *" + str(member) + "* NOT FOUND - Adding user to DataBase")
+    roles = fetch_roles(member)
+    user = str(member)
+    cursor.execute("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
+                   (user, str(member.id), str(member.nick), 0, str(roles)))
+    conn.commit()
+
+
 client.loop.create_task(display())
 client.loop.create_task(update_roles())
 client.loop.create_task(list_servers())
 client.loop.create_task(update_activity_weekly())
+#client.loop.create_task(check_not_in_clan)
 client.run(TOKEN)
