@@ -7,6 +7,7 @@ import sqlite3
 import sys
 import traceback
 import logging
+import requests
 import os
 from os import path
 from discord import Game
@@ -89,7 +90,13 @@ else:
                           (NoVoice integer , NoMessages integer, GuestRole text, ActiveRole text, InactiveRole text, BeginDate text, StombotChannel text)
                        """)
     connect.commit()
-    cursor2.execute("""INSERT INTO Presets VALUES (?,?,?,?,?,?,?)""", (120, 10, "381911719901134850", "SB_Test_A", "SB_Test_X", '2018-07-22 00:00:00', '466401774094516245'))
+    cursor2.execute("""INSERT INTO Presets VALUES (?,?,?,?,?,?,?)""", (120, 10, "381911719901134850", "[TEST]Discord Active", "[TEST]Discord Inactive", '2018-08-05 20:59:08', '2018-08-05 20:59:08'))
+    connect.commit()
+    cursor2.execute("""CREATE TABLE Fun
+                              (joke text , insult text)
+                           """)
+    connect.commit()
+    cursor2.execute("""INSERT INTO Fun VALUES (?,?)""", ('on', 'on'))
     connect.commit()
 
 server_id = '162706186272112640'#StormBot
@@ -304,6 +311,7 @@ async def server_roles():
     try:
         await client.wait_until_ready()
         while not client.is_closed:
+            await asyncio.sleep(60 * 60 * 24)
             server = client.get_server('162706186272112640')
             temp3 = 0
             print('-Processing Server Roles')
@@ -330,7 +338,6 @@ async def server_roles():
                                     (str(server.roles[temp3].name), str(server.roles[temp3].color)[1:], str(server.roles[temp3].id)))
                 temp3 = temp3 + 1
             print('Processing Server Roles (FINISHED)')
-            await asyncio.sleep(60 * 60 * 24)
     except Exception as e:
         log_exception(str(e))
 
@@ -343,8 +350,8 @@ async def display():
             await client.change_presence(game=Game(name="?help | BETA"))  #?help
             await asyncio.sleep(25)
             await client.change_presence(game=Game(name="ENV: " + str(server_env)))
-            await asyncio.sleep(2)
-            await client.change_presence(game=Game(name="DEV: The Woj"))
+            await asyncio.sleep(3)
+            await client.change_presence(game=Game(name="DEV: ZombieEar | The Woj"))
             await asyncio.sleep(2)
     except Exception as e:
         log_exception(str(e))
@@ -353,32 +360,33 @@ async def display():
 @client.event#0006
 async def on_voice_state_update(before, after):
     try:
-        server = client.get_server(server_id)
-        channel = discord.utils.get(server.channels, name='AFK', type='Voice')
-        if in_voice_channel(before, server, 'AFK') == False:
-            if before.voice.voice_channel is None and after.voice.voice_channel is not None:
+        blocked_voip = ['381910672256008196', '409383273182003211', '463518519556833280', '382125277066690562']
+        if not bot_check(after.id, server_id):
+            if str(after.voice.voice_channel.id) not in blocked_voip:
                 if before.voice.voice_channel is None and after.voice.voice_channel is not None:
-                    start = int(time.time())
-                while before.voice.voice_channel is None and after.voice.voice_channel is not None:
-                    await asyncio.sleep(0.5)
-                finish = int(time.time())
-                duration = ((finish - start) / 60)
-                temp = _sql_select("""SELECT * FROM DiscordActivity WHERE User_ID = ?""", (str(after.id),))
-                retn = temp.fetchall()
-                if len(retn) == 0:
-                    print("Warning 0008 -- MEMBER *" + str(after) + "* NOT FOUND - Adding user to DataBase")
-                    roles = fetch_roles(after)
-                    user = str(after)
-                    _sql_commit("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
-                                   (user, str(after.id), str(after.nick), int(duration), str(roles)))
-                else:
-                    sql = """
-                       UPDATE DiscordActivity
-                       SET Minutes_Voice = Minutes_Voice + ?
-                       WHERE User_ID = ?
-                    """
-                    data = (duration, str(after.id))
-                    _sql_commit(sql, data)
+                    if before.voice.voice_channel is None and after.voice.voice_channel is not None:
+                        start = int(time.time())
+                    while before.voice.voice_channel is None and after.voice.voice_channel is not None:
+                        await asyncio.sleep(0.5)
+                    finish = int(time.time())
+                    duration = ((finish - start) / 60)
+                    temp = _sql_select("""SELECT * FROM DiscordActivity WHERE User_ID = ?""", (str(after.id),))
+                    retn = temp.fetchall()
+                    #print(str(after) + '    Time:' + str(duration))
+                    if len(retn) == 0:
+                        print("Warning 0008 -- MEMBER *" + str(after) + "* NOT FOUND - Adding user to DataBase")
+                        roles = fetch_roles(after)
+                        user = str(after)
+                        _sql_commit("""INSERT INTO DiscordActivity VALUES (?, ?, ?, ?, 0, 0, 'NA', 'NA', ?)""",
+                                       (user, str(after.id), str(after.nick), int(duration), str(roles)))
+                    else:
+                        sql = """
+                           UPDATE DiscordActivity
+                           SET Minutes_Voice = Minutes_Voice + ?
+                           WHERE User_ID = ?
+                        """
+                        data = (duration, str(after.id))
+                        _sql_commit(sql, data)
     except Exception as e:
         log_exception(str(e))
 
@@ -390,6 +398,9 @@ async def on_message(message):
         blocked_channels = ['162706186272112640']
         server = client.get_server(server_id)
         sender = server.get_member(message.author.id)
+
+        if bot_check(message.author.id, server_id):
+            return
 
         if message.author == client.user:#do not want the bot to reply to itself
             return
@@ -644,83 +655,55 @@ async def on_message(message):
                     await client.send_message(message.channel, msg.format(message))
 
             if message.content.startswith(BOT_PREFIX + 'stop'):
-                if str(message.author.id) == '162705828883726336':
+                if str(message.author.id) == '162705828883726336' or str(message.author.id) == '204995313080074250':
                     await client.send_message(message.channel, 'Halting StormBot Operations with exit code 0'.format(message))
                     sys.exit()
                 else:
                     await client.send_message(message.channel, 'You do not have the required permissions to execute '
                                                                'this command'.format(message))
 
-            if message.content.startswith(BOT_PREFIX + 'top'):
+            if message.content.startswith(BOT_PREFIX + 'top25'):
                 member = server.get_member(message.author.id)
                 mod_ck = moderator_check(message.author.id, server_id)
                 if (mod_ck is True) or member.server_permissions.administrator:
-                    msg_cont = message.content[5:]
-                    split_msg = msg_cont.split()
-                    print(split_msg)
-                    msg = ['message', 'Message']
-                    vce = ['voice', 'Voice']
-                    A = ['Active', 'active']
-                    X = ['Inactive', 'inactive']
-                    if len(split_msg) == 0:
-                        split_msg.append(25)
-                    print(split_msg)
-                    if isinstance(split_msg[0], int) == False:
-                        split_msg[0] = 25
-                    if int(split_msg[0]) <= 25:
-                        if len(split_msg) == 2:
-                            if split_msg[1] in msg:
-                                if len(split_msg) == 3:
-                                    if split_msg[2] in A:
-                                        temp = _sql_select("""SELECT Top ? * FROM DiscordActivity
-                                                          WHERE Weekly_Activity = 'Active'
-                                                          ORDER BY Messages_Sent DESC""", (int(split_msg[0]),))
-                                    elif split_msg[2] in X:
-                                        temp = _sql_select("""SELECT Top ? * FROM DiscordActivity
-                                                          WHERE Weekly_Activity = 'Inactive'
-                                                          ORDER BY Messages_Sent DESC""", (int(split_msg[0]),))
-                                    else:
-                                        temp = _sql_select("""SELECT Top ? * FROM DiscordActivity
-                                                          ORDER BY Messages_Sent DESC""", (int(split_msg[0]),))
-                                else:
-                                    temp = _sql_select("""SELECT Top ? * FROM DiscordActivity
-                                                       ORDER BY Messages_Sent DESC""", (int(split_msg[0]),))
-                            elif split_msg[1] in vce:
-                                if len(split_msg) == 3:
-                                    if split_msg[2] in A:
-                                        temp = _sql_select("""SELECT Top ? * FROM DiscordActivity
-                                                          WHERE Weekly_Activity = 'Active'
-                                                          ORDER BY Minutes_Voice DESC""", (int(split_msg[0]),))
-                                    elif split_msg[2] in X:
-                                        temp = _sql_select("""SELECT Top ? * FROM DiscordActivity
-                                                          WHERE Weekly_Activity = 'Inactive'
-                                                          ORDER BY Minutes_Voice DESC""", (int(split_msg[0]),))
-                                    else:
-                                        temp = _sql_select("""SELECT Top ? * FROM DiscordActivity
-                                                          ORDER BY Minutes_Voice DESC""", (int(split_msg[0]),))
-                                else:
-                                    temp = _sql_select("""SELECT Top ? * FROM DiscordActivity
-                                                       ORDER BY Minutes_Voice DESC""", (int(split_msg[0]),))
-                            else:
-                                temp = _sql_select("""SELECT Top ? * FROM DiscordActivity
-                                                  ORDER BY Minutes_Voice DESC""", (int(split_msg[0]),))
-                        else:
-                            temp = _sql_select("""SELECT Top ? * FROM DiscordActivity
-                                              ORDER BY Minutes_Voice DESC""", (int(split_msg[0]),))
+                    msg_cont = message.content[7:]
+                    if msg_cont == 'message' or msg_cont == 'Message':
+                        cursor.execute("""SELECT Top 25 * FROM DiscordActivity
+                                                  ORDER BY Messages_Sent DESC""")
+                    elif msg_cont == 'message active' or msg_cont == 'Message Active' or msg_cont == 'Message active' or msg_cont == 'message Active':
+                        cursor.execute("""SELECT Top 25 * FROM DiscordActivity
+                                                  WHERE Weekly_Activity = 'Active'
+                                                  ORDER BY Messages_Sent DESC""")
+                    elif msg_cont == 'message inactive' or msg_cont == 'Message Inactive' or msg_cont == 'Message inactive' or msg_cont == 'message Inactive':
+                        cursor.execute("""SELECT Top 25 * FROM DiscordActivity
+                                                  WHERE Weekly_Activity = 'Inactive'
+                                                  ORDER BY Messages_Sent DESC""")
+                    elif msg_cont == 'voice active' or msg_cont == 'Voice Active' or msg_cont == 'Voice active' or msg_cont == 'voice Active':
+                        cursor.execute("""SELECT Top 25 * FROM DiscordActivity
+                                                  WHERE Weekly_Activity = 'Active'
+                                                  ORDER BY Minutes_Voice DESC""")
+                    elif msg_cont == 'voice inactive' or msg_cont == 'Voice Inactive' or msg_cont == 'Voice inactive' or msg_cont == 'voice Inactive':
+                        cursor.execute("""SELECT Top 25 * FROM DiscordActivity
+                                                  WHERE Weekly_Activity = 'Inactive'
+                                                  ORDER BY Minutes_Voice DESC""")
                     else:
-                        temp = _sql_select("""SELECT Top 25 * FROM DiscordActivity
-                                          ORDER BY Minutes_Voice DESC""", '')
-                    user_dat = temp.fetchall()
+                        cursor.execute("""SELECT Top 25 * FROM DiscordActivity
+                                                  ORDER BY Minutes_Voice DESC""")
+                    user_dat = cursor.fetchall()
                     temp = 0
                     emb = (discord.Embed(title="Active Top 25", color=0xe1960b))
                     while temp < len(user_dat):
-                        emb.add_field(name=(str(temp + 1) + '. ' + str(user_dat[temp][3]) + ''), value=('```Voice (Minutes): ' + str(user_dat[temp][4]) + '     Message(s): ' +
-                                                                                                   str(user_dat[temp][5]) + '\nWeekly Activity: ' + str(user_dat[temp][8])) + '```', inline=True)
+                        emb.add_field(name=(str(temp + 1) + '. Member: ' + str(user_dat[temp][1]) + '   |    Nick: ' + str(user_dat[temp][3])),
+                                      value=('```Voice (Minutes): ' + str(user_dat[temp][4]) + '     Message(s): ' +
+                                             str(user_dat[temp][5]) + '\nWeekly Activity: ' + str(
+                                                  user_dat[temp][8])) + '```', inline=True)
                         temp = temp + 1
                     emb.set_footer(text='Requested By: (' + str(message.author.id) + ') ' + str(message.author))
                     await client.send_message(message.channel, embed=emb)
                 else:
-                    await client.send_message(message.channel, 'Access Denied - You are not a Moderator or Administrator'.format(message))
+                    await client.send_message(message.channel,
+                                              'Access Denied - You are not a Moderator or Administrator'.format(
+                                                  message))
             if message.content.startswith(BOT_PREFIX + 'test'):
                 temp3 = 0
                 print(str(server.roles))
@@ -730,8 +713,22 @@ async def on_message(message):
                     _sql_commit("""INSERT INTO DiscordRoleDef VALUES (?, ?, ?)""",
                                 (server.roles[temp3].name, server.roles[temp3].color, server.roles[temp3].id))
                     temp3 = temp3 + 1
-            if message.content.startswith(BOT_PREFIX + 'error'):
-                await client.send_message('2', 'hi')
+            if message.content.startswith(BOT_PREFIX + 'joke'):
+                cursor2.execute("""SELECT * FROM Fun""")
+                conf_dat = cursor2.fetchall()
+                if str(conf_dat[0][0]) == 'on' or member.server_permissions.administrator:
+                    joke = requests.get('https://geek-jokes.sameerkumar.website/api').content
+                    msg = str(joke)[3:-4]
+                    emb = (discord.Embed(title=msg, color=0x0976e3))
+                    await client.send_message(message.channel, embed=emb)
+            if message.content.startswith(BOT_PREFIX + 'insult'):
+                cursor2.execute("""SELECT * FROM Fun""")
+                conf_dat = cursor2.fetchall()
+                if str(conf_dat[0][1]) == 'on' or member.server_permissions.administrator:
+                    insult = requests.get('https://insult.mattbas.org/api/insult').content
+                    msg = str(insult)[2:-1]
+                    emb = (discord.Embed(title=msg, color=0x0976e3))
+                    await client.send_message(message.channel, embed=emb)
     except Exception as e:
         log_exception(str(e))
 
@@ -929,6 +926,22 @@ def moderator_check(userid, serverid):#check if user is in a Moderator
         if mod in roles:
             result = True
         if programmer in roles:
+            result = True
+        return result
+    except Exception as e:
+        log_exception(str(e))
+
+
+def bot_check(userid, serverid):#check if user is in a Moderator
+    try:
+        server = client.get_server(serverid)
+        member = server.get_member(userid)
+        result = False
+        BOT_role = 'Bots'
+
+        roles = fetch_roles(member)
+
+        if BOT_role in roles:
             result = True
         return result
     except Exception as e:
