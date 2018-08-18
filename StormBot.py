@@ -48,7 +48,7 @@ database = str(BOT_CONFIG[1]).strip()
 username = str(BOT_CONFIG[2]).strip()
 password = str(BOT_CONFIG[3]).strip()
 TOKEN = str(BOT_CONFIG[4]).strip()
-#driver = str(BOT_CONFIG[5]).strip()
+server_startime = time.time()
 
 retry_flag = True
 retry_count = 0
@@ -704,15 +704,6 @@ async def on_message(message):
                     await client.send_message(message.channel,
                                               'Access Denied - You are not a Moderator or Administrator'.format(
                                                   message))
-            if message.content.startswith(BOT_PREFIX + 'test'):
-                temp3 = 0
-                print(str(server.roles))
-                print(str(len(server.roles)))
-                while temp3 <= len(server.roles):
-                    print(server.roles[temp3].name)
-                    _sql_commit("""INSERT INTO DiscordRoleDef VALUES (?, ?, ?)""",
-                                (server.roles[temp3].name, server.roles[temp3].color, server.roles[temp3].id))
-                    temp3 = temp3 + 1
             if message.content.startswith(BOT_PREFIX + 'joke'):
                 cursor2.execute("""SELECT * FROM Fun""")
                 conf_dat = cursor2.fetchall()
@@ -728,6 +719,16 @@ async def on_message(message):
                     insult = requests.get('https://insult.mattbas.org/api/insult').content
                     msg = str(insult)[2:-1]
                     emb = (discord.Embed(title=msg, color=0x0976e3))
+                    await client.send_message(message.channel, embed=emb)
+            if message.content.startswith(BOT_PREFIX + 'status'):
+                print('here')
+                if member.server_permissions.administrator:
+                    current_time = time.time()
+                    difference = int(round(current_time - server_startime))
+                    uptime = str(datetime.timedelta(seconds=difference))
+                    emb = (discord.Embed(title='Server Status', color=0x0976e3))
+                    emb.add_field(name='Uptime:', value=uptime, inline=True)
+                    emb.set_footer(text='Requested By: (' + str(message.author.id) + ') ' + str(message.author))
                     await client.send_message(message.channel, embed=emb)
     except Exception as e:
         log_exception(str(e))
